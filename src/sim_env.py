@@ -1,97 +1,69 @@
+"""MuJoCo simulation environment for SO101 arm."""
+
 import mujoco
 import numpy as np
 
 
 class SimEnvironment:
+    """SO101 arm simulation environment using MuJoCo.
+
+    Wraps MuJoCo model/data with joint lookup and control helpers.
+    """
+
+    ARM_JOINTS = [
+        "shoulder_pan",
+        "shoulder_lift",
+        "elbow_flex",
+        "wrist_flex",
+        "wrist_roll",
+    ]
+
     def __init__(self, xml_path: str) -> None:
         self.model = mujoco.MjModel.from_xml_path(xml_path)
         self.data = mujoco.MjData(self.model)
         self.model.opt.timestep = 0.002  # 500Hz physics
+
         # Find arm joint indices
-        self.left_arm_joints = self._find_joints(
-            [
-                "left_shoulder_pitch_joint",
-                "left_shoulder_roll_joint",
-                "left_shoulder_yaw_joint",
-                "left_elbow_joint",
-                "left_wrist_roll_joint",
-            ]
-        )
-        self.right_arm_joints = self._find_joints(
-            [
-                "right_shoulder_pitch_joint",
-                "right_shoulder_roll_joint",
-                "right_shoulder_yaw_joint",
-                "right_elbow_joint",
-                "right_wrist_roll_joint",
-            ]
-        )
-        # Find actuator indices
-        self.left_arm_actuators = self._find_actuators(
-            [
-                "left_shoulder_pitch_joint",
-                "left_shoulder_roll_joint",
-                "left_shoulder_yaw_joint",
-                "left_elbow_joint",
-                "left_wrist_roll_joint",
-            ]
-        )
-        self.right_arm_actuators = self._find_actuators(
-            [
-                "right_shoulder_pitch_joint",
-                "right_shoulder_roll_joint",
-                "right_shoulder_yaw_joint",
-                "right_elbow_joint",
-                "right_wrist_roll_joint",
-            ]
-        )
-        # Find EEF body IDs
-        self.left_eef_body = self._find_body("left_wrist_roll_rubber_hand")
-        self.right_eef_body = self._find_body("right_wrist_roll_rubber_hand")
-        # Get qpos and dof addresses for arm joints
-        self.left_arm_qposadr = self.model.jnt_qposadr[self.left_arm_joints]
-        self.right_arm_qposadr = self.model.jnt_qposadr[self.right_arm_joints]
-        self.left_arm_dofadr = self.model.jnt_dofadr[self.left_arm_joints]
-        self.right_arm_dofadr = self.model.jnt_dofadr[self.right_arm_joints]
-        # Get joint ranges
-        self.left_joint_ranges = self.model.jnt_range[self.left_arm_joints]
-        self.right_joint_ranges = self.model.jnt_range[self.right_arm_joints]
+        self.arm_joints = self._find_joints(self.ARM_JOINTS)
+        self.arm_actuators = self._find_actuators(self.ARM_JOINTS)
+
+        # EEF body (gripper is the last body before EEF frame)
+        self.eef_body = self._find_body("gripper")
+
+        # qpos/dof addresses
+        self.arm_qposadr = self.model.jnt_qposadr[self.arm_joints]
+        self.arm_dofadr = self.model.jnt_dofadr[self.arm_joints]
+
+        # Joint ranges
+        self.joint_ranges = self.model.jnt_range[self.arm_joints]
+
         mujoco.mj_resetData(self.model, self.data)
 
     def _find_joints(self, names: list[str]) -> np.ndarray:
-        indices = []
-        for name in names:
-            jnt_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, name)
-            indices.append(jnt_id)
-        return np.array(indices)
+        return np.array(
+            [mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, n) for n in names]
+        )
 
     def _find_actuators(self, names: list[str]) -> np.ndarray:
-        indices = []
-        for name in names:
-            act_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_ACTUATOR, name)
-            indices.append(act_id)
-        return np.array(indices)
+        return np.array(
+            [mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_ACTUATOR, n) for n in names]
+        )
 
     def _find_body(self, name: str) -> int:
         return mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, name)
 
-    def get_eef_position(self, side: str) -> np.ndarray:
-        body_id = self.left_eef_body if side == "left" else self.right_eef_body
-        return self.data.xpos[body_id].copy()
+    def get_eef_position(self) -> np.ndarray:
+        return self.data.xpos[self.eef_body].copy()
 
-    def get_joint_positions(self, side: str) -> np.ndarray:
-        qposadr = self.left_arm_qposadr if side == "left" else self.right_arm_qposadr
-        return self.data.qpos[qposadr].copy()
+    def get_joint_positions(self) -> np.ndarray:
+        return self.data.qpos[self.arm_qposadr].copy()
 
-    def get_joint_velocities(self, side: str) -> np.ndarray:
-        dofadr = self.left_arm_dofadr if side == "left" else self.right_arm_dofadr
-        return self.data.qvel[dofadr].copy()
+    def set_joint_positions(self, q: np.ndarray) -> None:
+        self.data.qpos[self.arm_qposadr] = q
+        mujoco.mj_forward(self.model, self.data)
 
-    def set_control(self, side: str, torques: np.ndarray) -> None:
-        actuators = (
-            self.left_arm_actuators if side == "left" else self.right_arm_actuators
-        )
-        self.data.ctrl[actuators] = torques
+    def set_control(self, q: np.ndarray) -> None:
+        self.data.ctrl[self.arm_actuators] = q
 
     def step(self) -> None:
         mujoco.mj_step(self.model, self.data)
