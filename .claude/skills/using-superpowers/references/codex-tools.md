@@ -1,3 +1,4 @@
+
 # Codex 工具映射
 
 Skills 使用 Claude Code 的工具名称。在 Codex 中遇到这些名称时，请使用对应的平台等价工具：
