@@ -34,7 +34,9 @@ class IKSolver:
             joint_ranges = env.right_joint_ranges
 
         current_pos = env.data.xpos[body_id].copy()
-        mujoco.mj_jac(env.model, env.data, self._jac_pos, self._jac_rot, current_pos, body_id)
+        mujoco.mj_jac(
+            env.model, env.data, self._jac_pos, self._jac_rot, current_pos, body_id
+        )
         J = self._jac_pos[:, dofadr]
         error = target_pos - current_pos
 

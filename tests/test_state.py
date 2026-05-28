@@ -1,4 +1,3 @@
-import threading
 import numpy as np
 from src.state import TeleopState
 

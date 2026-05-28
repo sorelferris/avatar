@@ -1,7 +1,6 @@
 # main.py
 import time
 import cv2
-import numpy as np
 
 from src.camera import CameraThread
 from src.hand_detector import HandDetector
@@ -13,10 +12,14 @@ from src.visualizer import Visualizer
 
 def main() -> None:
     # Initialize modules
-    camera = CameraThread(camera_id=0, fps=30)
+    camera = CameraThread(camera_id=4, fps=30)
     detector = HandDetector(max_hands=2)
-    left_proc = CoordinateProcessor(hand_range=0.3, robot_range=0.4, ema_alpha=0.3, max_radius=0.36)
-    right_proc = CoordinateProcessor(hand_range=0.3, robot_range=0.4, ema_alpha=0.3, max_radius=0.36)
+    left_proc = CoordinateProcessor(
+        hand_range=0.3, robot_range=0.4, ema_alpha=0.3, max_radius=0.36
+    )
+    right_proc = CoordinateProcessor(
+        hand_range=0.3, robot_range=0.4, ema_alpha=0.3, max_radius=0.36
+    )
     sim = SimEnvironment("assets/g1_23dof_fixed.xml")
     ik = IKSolver(sim, damping=0.1, max_delta=0.1)
     viz = Visualizer(sim.model, sim.data)
@@ -82,7 +85,9 @@ def main() -> None:
 
         # Visualize
         annotated = viz.draw_opencv(
-            frame, left_lm, right_lm,
+            frame,
+            left_lm,
+            right_lm,
             left_target if left_det else None,
             right_target if right_det else None,
             fps,

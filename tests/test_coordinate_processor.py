@@ -1,6 +1,12 @@
 # tests/test_coordinate_processor.py
 import numpy as np
-from src.coordinate_processor import remap_camera_to_robot, LinearScaler, EMAFilter, clip_to_workspace, CoordinateProcessor
+from src.coordinate_processor import (
+    remap_camera_to_robot,
+    LinearScaler,
+    EMAFilter,
+    clip_to_workspace,
+    CoordinateProcessor,
+)
 
 
 def test_remap_camera_to_robot_identity():
@@ -70,7 +76,9 @@ def test_clip_outside_workspace():
     target = np.array([0.5, 0.5, 0.5])
     result = clip_to_workspace(target, max_radius=0.4)
     assert np.linalg.norm(result) <= 0.4 + 1e-6
-    assert np.allclose(result / np.linalg.norm(result), target / np.linalg.norm(target), atol=1e-6)
+    assert np.allclose(
+        result / np.linalg.norm(result), target / np.linalg.norm(target), atol=1e-6
+    )
 
 
 def test_processor_full_pipeline():

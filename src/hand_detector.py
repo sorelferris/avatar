@@ -43,7 +43,14 @@ def _ensure_midas_repo() -> str:
     os.makedirs(os.path.dirname(_MIDAS_REPO_DIR), exist_ok=True)
     print(f"Cloning MiDaS repo to {_MIDAS_REPO_DIR} ...")
     subprocess.check_call(
-        ["git", "clone", "--depth", "1", "https://github.com/intel-isl/MiDaS.git", _MIDAS_REPO_DIR],
+        [
+            "git",
+            "clone",
+            "--depth",
+            "1",
+            "https://github.com/intel-isl/MiDaS.git",
+            _MIDAS_REPO_DIR,
+        ],
     )
     print("Clone complete.")
     return _MIDAS_REPO_DIR
@@ -73,14 +80,20 @@ class HandDetector:
 
         # MiDaS depth estimation
         midas_dir = _ensure_midas_repo()
-        self._midas = torch.hub.load(midas_dir, "MiDaS_small", source="local", trust_repo=True)
+        self._midas = torch.hub.load(
+            midas_dir, "MiDaS_small", source="local", trust_repo=True
+        )
         self._midas.eval()
-        self._midas_transforms = torch.hub.load(midas_dir, "transforms", source="local", trust_repo=True)
+        self._midas_transforms = torch.hub.load(
+            midas_dir, "transforms", source="local", trust_repo=True
+        )
         self._midas_transform = self._midas_transforms.small_transform
         self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self._midas.to(self._device)
 
-    def detect(self, frame_rgb: np.ndarray, frame_bgr: np.ndarray | None = None) -> tuple[
+    def detect(
+        self, frame_rgb: np.ndarray, frame_bgr: np.ndarray | None = None
+    ) -> tuple[
         np.ndarray | None,  # left landmarks (21,3) or None
         np.ndarray | None,  # right landmarks (21,3) or None
         np.ndarray | None,  # left index tip 3D (3,) with MiDaS depth
@@ -101,9 +114,7 @@ class HandDetector:
                 result.hand_landmarks, result.handedness
             ):
                 label = handedness_list[0].category_name
-                lm = np.array(
-                    [[lm.x, lm.y, lm.z] for lm in hand_lm_list]
-                )
+                lm = np.array([[lm.x, lm.y, lm.z] for lm in hand_lm_list])
                 tip = lm[self.INDEX_FINGER_TIP].copy()
                 if label == "Left":
                     left_lm = lm

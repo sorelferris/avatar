@@ -8,35 +8,43 @@ class SimEnvironment:
         self.data = mujoco.MjData(self.model)
         self.model.opt.timestep = 0.002  # 500Hz physics
         # Find arm joint indices
-        self.left_arm_joints = self._find_joints([
-            "left_shoulder_pitch_joint",
-            "left_shoulder_roll_joint",
-            "left_shoulder_yaw_joint",
-            "left_elbow_joint",
-            "left_wrist_roll_joint",
-        ])
-        self.right_arm_joints = self._find_joints([
-            "right_shoulder_pitch_joint",
-            "right_shoulder_roll_joint",
-            "right_shoulder_yaw_joint",
-            "right_elbow_joint",
-            "right_wrist_roll_joint",
-        ])
+        self.left_arm_joints = self._find_joints(
+            [
+                "left_shoulder_pitch_joint",
+                "left_shoulder_roll_joint",
+                "left_shoulder_yaw_joint",
+                "left_elbow_joint",
+                "left_wrist_roll_joint",
+            ]
+        )
+        self.right_arm_joints = self._find_joints(
+            [
+                "right_shoulder_pitch_joint",
+                "right_shoulder_roll_joint",
+                "right_shoulder_yaw_joint",
+                "right_elbow_joint",
+                "right_wrist_roll_joint",
+            ]
+        )
         # Find actuator indices
-        self.left_arm_actuators = self._find_actuators([
-            "left_shoulder_pitch_joint",
-            "left_shoulder_roll_joint",
-            "left_shoulder_yaw_joint",
-            "left_elbow_joint",
-            "left_wrist_roll_joint",
-        ])
-        self.right_arm_actuators = self._find_actuators([
-            "right_shoulder_pitch_joint",
-            "right_shoulder_roll_joint",
-            "right_shoulder_yaw_joint",
-            "right_elbow_joint",
-            "right_wrist_roll_joint",
-        ])
+        self.left_arm_actuators = self._find_actuators(
+            [
+                "left_shoulder_pitch_joint",
+                "left_shoulder_roll_joint",
+                "left_shoulder_yaw_joint",
+                "left_elbow_joint",
+                "left_wrist_roll_joint",
+            ]
+        )
+        self.right_arm_actuators = self._find_actuators(
+            [
+                "right_shoulder_pitch_joint",
+                "right_shoulder_roll_joint",
+                "right_shoulder_yaw_joint",
+                "right_elbow_joint",
+                "right_wrist_roll_joint",
+            ]
+        )
         # Find EEF body IDs
         self.left_eef_body = self._find_body("left_wrist_roll_rubber_hand")
         self.right_eef_body = self._find_body("right_wrist_roll_rubber_hand")
@@ -80,7 +88,9 @@ class SimEnvironment:
         return self.data.qvel[dofadr].copy()
 
     def set_control(self, side: str, torques: np.ndarray) -> None:
-        actuators = self.left_arm_actuators if side == "left" else self.right_arm_actuators
+        actuators = (
+            self.left_arm_actuators if side == "left" else self.right_arm_actuators
+        )
         self.data.ctrl[actuators] = torques
 
     def step(self) -> None:
