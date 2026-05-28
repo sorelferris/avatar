@@ -2,8 +2,10 @@
 import os
 import urllib.request
 
+import cv2
 import mediapipe as mp
 import numpy as np
+import torch
 from mediapipe.tasks.python import BaseOptions
 from mediapipe.tasks.python.vision import (
     HandLandmarker,
@@ -16,6 +18,28 @@ _DEFAULT_MODEL_URL = (
     "hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task"
 )
 _DEFAULT_MODEL_DIR = os.path.expanduser("~/.cache/mediapipe/models")
+_MIDAS_REPO_DIR = os.path.expanduser("~/.cache/torch/hub/intel-isl_MiDaS_master")
+_EFFICIENTNET_REPO_DIR = os.path.expanduser(
+    "~/.cache/torch/hub/rwightman_gen-efficientnet-pytorch_master"
+)
+
+# Map of remote repo names -> local clone paths (for offline / rate-limit bypass)
+_LOCAL_REPO_MAP: dict[str, str] = {
+    "rwightman/gen-efficientnet-pytorch": _EFFICIENTNET_REPO_DIR,
+}
+
+
+def _patched_hub_load(repo_or_dir, model, *args, **kwargs):
+    """torch.hub.load wrapper that uses local clones and trusts repos."""
+    if repo_or_dir in _LOCAL_REPO_MAP and os.path.isdir(_LOCAL_REPO_MAP[repo_or_dir]):
+        repo_or_dir = _LOCAL_REPO_MAP[repo_or_dir]
+        kwargs.setdefault("source", "local")
+    kwargs.setdefault("trust_repo", True)
+    return _original_torch_hub_load(repo_or_dir, model, *args, **kwargs)
+
+
+_original_torch_hub_load = torch.hub.load
+torch.hub.load = _patched_hub_load
 
 
 def _ensure_model(path: str | None) -> str:
@@ -29,6 +53,21 @@ def _ensure_model(path: str | None) -> str:
         urllib.request.urlretrieve(_DEFAULT_MODEL_URL, dest)
         print("Download complete.")
     return dest
+
+
+def _ensure_midas_repo() -> str:
+    """Return path to local MiDaS repo, cloning if needed."""
+    if os.path.isdir(os.path.join(_MIDAS_REPO_DIR, "midas")):
+        return _MIDAS_REPO_DIR
+    import subprocess
+
+    os.makedirs(os.path.dirname(_MIDAS_REPO_DIR), exist_ok=True)
+    print(f"Cloning MiDaS repo to {_MIDAS_REPO_DIR} ...")
+    subprocess.check_call(
+        ["git", "clone", "--depth", "1", "https://github.com/intel-isl/MiDaS.git", _MIDAS_REPO_DIR],
+    )
+    print("Clone complete.")
+    return _MIDAS_REPO_DIR
 
 
 class HandDetector:
@@ -53,11 +92,20 @@ class HandDetector:
         self._landmarker = HandLandmarker.create_from_options(options)
         self._timestamp_ms = 0
 
-    def detect(self, frame_rgb: np.ndarray) -> tuple[
+        # MiDaS depth estimation
+        midas_dir = _ensure_midas_repo()
+        self._midas = torch.hub.load(midas_dir, "MiDaS_small", source="local")
+        self._midas.eval()
+        self._midas_transforms = torch.hub.load(midas_dir, "transforms", source="local")
+        self._midas_transform = self._midas_transforms.small_transform
+        self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self._midas.to(self._device)
+
+    def detect(self, frame_rgb: np.ndarray, frame_bgr: np.ndarray | None = None) -> tuple[
         np.ndarray | None,  # left landmarks (21,3) or None
         np.ndarray | None,  # right landmarks (21,3) or None
-        np.ndarray | None,  # left index tip (3,) or None
-        np.ndarray | None,  # right index tip (3,) or None
+        np.ndarray | None,  # left index tip 3D (3,) with MiDaS depth
+        np.ndarray | None,  # right index tip 3D (3,) with MiDaS depth
     ]:
         h, w = frame_rgb.shape[:2]
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
@@ -85,7 +133,60 @@ class HandDetector:
                     right_lm = lm
                     right_tip = tip
 
+        # Upgrade tips to 3D with MiDaS depth when BGR frame is provided
+        if left_tip is not None and frame_bgr is not None:
+            left_tip = self.get_index_tip_3d(left_tip, frame_bgr)
+        if right_tip is not None and frame_bgr is not None:
+            right_tip = self.get_index_tip_3d(right_tip, frame_bgr)
+
         return left_lm, right_lm, left_tip, right_tip
+
+    def estimate_depth(self, frame_bgr: np.ndarray, tip_px: tuple[int, int]) -> float:
+        """Estimate depth at pixel coordinate using MiDaS.
+        Returns normalized depth value (higher = closer in MiDaS convention).
+        """
+        rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+        input_batch = self._midas_transform(rgb).to(self._device)
+        with torch.no_grad():
+            prediction = self._midas(input_batch)
+            prediction = torch.nn.functional.interpolate(
+                prediction.unsqueeze(1),
+                size=frame_bgr.shape[:2],
+                mode="bicubic",
+                align_corners=False,
+            ).squeeze()
+        depth_map = prediction.cpu().numpy()
+        # Normalize to [0, 1]
+        depth_min = depth_map.min()
+        depth_max = depth_map.max()
+        if depth_max - depth_min > 0:
+            depth_map = (depth_map - depth_min) / (depth_max - depth_min)
+        # Sample at tip pixel
+        x, y = tip_px
+        x = max(0, min(x, depth_map.shape[1] - 1))
+        y = max(0, min(y, depth_map.shape[0] - 1))
+        return float(depth_map[y, x])
+
+    def get_index_tip_3d(
+        self,
+        tip_normalized: np.ndarray,
+        frame_bgr: np.ndarray,
+        palm_width_pixels: float | None = None,
+    ) -> np.ndarray:
+        """Get 3D position of index finger tip with MiDaS depth.
+        Returns (x, y, z) in normalized coordinates with z from MiDaS.
+        """
+        h, w = frame_bgr.shape[:2]
+        tip_px = (int(tip_normalized[0] * w), int(tip_normalized[1] * h))
+        midas_depth = self.estimate_depth(frame_bgr, tip_px)
+        # Scale depth with palm width correction if available
+        reference_palm_width = 80.0  # pixels, default
+        if palm_width_pixels is not None and palm_width_pixels > 0:
+            depth_scale = reference_palm_width / palm_width_pixels
+        else:
+            depth_scale = 1.0
+        z = midas_depth * depth_scale
+        return np.array([tip_normalized[0], tip_normalized[1], z])
 
     def close(self) -> None:
         self._landmarker.close()
