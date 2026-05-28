@@ -17,3 +17,19 @@ class LinearScaler:
 
     def scale(self, hand_pos_robot_frame: np.ndarray) -> np.ndarray:
         return (hand_pos_robot_frame - self._anchor) * self._scale
+
+
+class EMAFilter:
+    def __init__(self, alpha: float = 0.3) -> None:
+        self._alpha = alpha
+        self._state: np.ndarray | None = None
+
+    def update(self, value: np.ndarray) -> np.ndarray:
+        if self._state is None:
+            self._state = value.copy()
+        else:
+            self._state = self._alpha * value + (1 - self._alpha) * self._state
+        return self._state.copy()
+
+    def reset(self) -> None:
+        self._state = None

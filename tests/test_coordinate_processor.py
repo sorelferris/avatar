@@ -1,6 +1,6 @@
 # tests/test_coordinate_processor.py
 import numpy as np
-from src.coordinate_processor import remap_camera_to_robot, LinearScaler
+from src.coordinate_processor import remap_camera_to_robot, LinearScaler, EMAFilter
 
 
 def test_remap_camera_to_robot_identity():
@@ -37,3 +37,24 @@ def test_scaler_proportional():
     moved = np.array([0.65, 0.5, 0.5])
     result = scaler.scale(moved)
     assert np.allclose(result, [0.2, 0.0, 0.0], atol=1e-6)
+
+
+def test_ema_first_value():
+    ema = EMAFilter(alpha=0.3)
+    result = ema.update(np.array([1.0, 2.0, 3.0]))
+    assert np.allclose(result, [1.0, 2.0, 3.0])
+
+
+def test_ema_smoothing():
+    ema = EMAFilter(alpha=0.3)
+    ema.update(np.array([0.0, 0.0, 0.0]))
+    result = ema.update(np.array([1.0, 1.0, 1.0]))
+    assert np.allclose(result, [0.3, 0.3, 0.3])
+
+
+def test_ema_convergence():
+    ema = EMAFilter(alpha=0.3)
+    val = np.array([1.0, 1.0, 1.0])
+    for _ in range(100):
+        result = ema.update(val)
+    assert np.allclose(result, [1.0, 1.0, 1.0], atol=1e-3)
