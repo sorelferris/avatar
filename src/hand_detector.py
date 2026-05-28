@@ -19,27 +19,6 @@ _DEFAULT_MODEL_URL = (
 )
 _DEFAULT_MODEL_DIR = os.path.expanduser("~/.cache/mediapipe/models")
 _MIDAS_REPO_DIR = os.path.expanduser("~/.cache/torch/hub/intel-isl_MiDaS_master")
-_EFFICIENTNET_REPO_DIR = os.path.expanduser(
-    "~/.cache/torch/hub/rwightman_gen-efficientnet-pytorch_master"
-)
-
-# Map of remote repo names -> local clone paths (for offline / rate-limit bypass)
-_LOCAL_REPO_MAP: dict[str, str] = {
-    "rwightman/gen-efficientnet-pytorch": _EFFICIENTNET_REPO_DIR,
-}
-
-
-def _patched_hub_load(repo_or_dir, model, *args, **kwargs):
-    """torch.hub.load wrapper that uses local clones and trusts repos."""
-    if repo_or_dir in _LOCAL_REPO_MAP and os.path.isdir(_LOCAL_REPO_MAP[repo_or_dir]):
-        repo_or_dir = _LOCAL_REPO_MAP[repo_or_dir]
-        kwargs.setdefault("source", "local")
-    kwargs.setdefault("trust_repo", True)
-    return _original_torch_hub_load(repo_or_dir, model, *args, **kwargs)
-
-
-_original_torch_hub_load = torch.hub.load
-torch.hub.load = _patched_hub_load
 
 
 def _ensure_model(path: str | None) -> str:
@@ -94,9 +73,9 @@ class HandDetector:
 
         # MiDaS depth estimation
         midas_dir = _ensure_midas_repo()
-        self._midas = torch.hub.load(midas_dir, "MiDaS_small", source="local")
+        self._midas = torch.hub.load(midas_dir, "MiDaS_small", source="local", trust_repo=True)
         self._midas.eval()
-        self._midas_transforms = torch.hub.load(midas_dir, "transforms", source="local")
+        self._midas_transforms = torch.hub.load(midas_dir, "transforms", source="local", trust_repo=True)
         self._midas_transform = self._midas_transforms.small_transform
         self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self._midas.to(self._device)
