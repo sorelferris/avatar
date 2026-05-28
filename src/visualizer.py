@@ -1,6 +1,7 @@
 # src/visualizer.py
 import cv2
 import mujoco
+import mujoco.viewer
 import numpy as np
 
 
