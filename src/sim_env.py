@@ -40,6 +40,11 @@ class SimEnvironment:
         # Find EEF body IDs
         self.left_eef_body = self._find_body("left_wrist_roll_rubber_hand")
         self.right_eef_body = self._find_body("right_wrist_roll_rubber_hand")
+        # Get qpos and dof addresses for arm joints
+        self.left_arm_qposadr = self.model.jnt_qposadr[self.left_arm_joints]
+        self.right_arm_qposadr = self.model.jnt_qposadr[self.right_arm_joints]
+        self.left_arm_dofadr = self.model.jnt_dofadr[self.left_arm_joints]
+        self.right_arm_dofadr = self.model.jnt_dofadr[self.right_arm_joints]
         # Get joint ranges
         self.left_joint_ranges = self.model.jnt_range[self.left_arm_joints]
         self.right_joint_ranges = self.model.jnt_range[self.right_arm_joints]
@@ -67,12 +72,12 @@ class SimEnvironment:
         return self.data.xpos[body_id].copy()
 
     def get_joint_positions(self, side: str) -> np.ndarray:
-        joints = self.left_arm_joints if side == "left" else self.right_arm_joints
-        return self.data.qpos[joints].copy()
+        qposadr = self.left_arm_qposadr if side == "left" else self.right_arm_qposadr
+        return self.data.qpos[qposadr].copy()
 
     def get_joint_velocities(self, side: str) -> np.ndarray:
-        joints = self.left_arm_joints if side == "left" else self.right_arm_joints
-        return self.data.qvel[joints].copy()
+        dofadr = self.left_arm_dofadr if side == "left" else self.right_arm_dofadr
+        return self.data.qvel[dofadr].copy()
 
     def set_control(self, side: str, torques: np.ndarray) -> None:
         actuators = self.left_arm_actuators if side == "left" else self.right_arm_actuators
