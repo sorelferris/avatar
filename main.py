@@ -18,13 +18,13 @@ from src.visualizer import Visualizer
 URDF = "assets/SO101/so101_new_calib.urdf"
 XML = "assets/SO101/scene.xml"
 
-GRIPPER_CLOSED = 0.0     # radians
-GRIPPER_OPEN = 1.2      # radians
-GRIPPER_NEUTRAL = 0.6    # default when idle
+GRIPPER_CLOSED = 0.0  # radians
+GRIPPER_OPEN = 1.2  # radians
+GRIPPER_NEUTRAL = 0.6  # default when idle
 
 
 def main() -> None:
-    camera = CameraThread(camera_id=0, fps=30)
+    camera = CameraThread(camera_id=4, fps=30)
     detector = HandDetector(max_hands=1)
     processor = CoordinateProcessor(
         hand_range=0.3, robot_range=0.4, ema_alpha=0.3, max_radius=0.36
