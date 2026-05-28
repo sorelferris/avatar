@@ -41,6 +41,7 @@ class Visualizer:
         left_target: np.ndarray | None,
         right_target: np.ndarray | None,
         fps: float,
+        gesture: str | None = None,
     ) -> np.ndarray:
         annotated = frame.copy()
         h, w = annotated.shape[:2]
@@ -81,6 +82,17 @@ class Visualizer:
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.6,
                 (0, 0, 255),
+                1,
+            )
+        if gesture is not None:
+            color = (0, 255, 0) if gesture == "open" else (0, 0, 255) if gesture == "fist" else (0, 255, 255)
+            cv2.putText(
+                annotated,
+                f"Gesture: {gesture}",
+                (10, y0 + 90),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                color,
                 1,
             )
         return annotated

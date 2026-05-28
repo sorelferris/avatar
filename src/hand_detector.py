@@ -178,5 +178,52 @@ class HandDetector:
         z = midas_depth * depth_scale
         return np.array([tip_normalized[0], tip_normalized[1], z])
 
+    def detect_gesture(self, landmarks: np.ndarray | None) -> str | None:
+        """Detect hand gesture from landmarks.
+
+        Returns:
+            "fist"  — all fingers curled (gripper closes)
+            "open"  — fingers extended (gripper opens)
+            "palm_closed" — all fingers curled tight toward palm center (reset signal)
+            None    — no landmarks
+
+        Detection based on fingertip-to-mcp distances relative to palm size.
+        All fingertips close to their MCPs = fist; at least one extended = open;
+        all fingertips close to palm center = palm_closed (reset trigger).
+        """
+        if landmarks is None:
+            return None
+
+        # Landmark indices
+        MCP = [1, 4, 7, 11]   # MCP joints of thumb, index, middle, ring
+        TIP = [4, 8, 12, 16]  # Corresponding fingertips
+        PALM = 0              # Wrist base
+
+        # Compute reference palm size (distance from wrist to middle finger MCP)
+        palm_size = np.linalg.norm(landmarks[PALM] - landmarks[9])
+        if palm_size < 1e-6:
+            return None
+
+        # Check if all fingertips are curled toward their MCPs
+        all_fingers_closed = True
+        for mcp_idx, tip_idx in zip(MCP, TIP):
+            dist = np.linalg.norm(landmarks[tip_idx] - landmarks[mcp_idx])
+            if dist > 0.5 * palm_size:
+                all_fingers_closed = False
+                break
+
+        if all_fingers_closed:
+            return "fist"
+
+        # Check palm_closed: all fingertips close to palm center
+        palm_center = np.mean([landmarks[i] for i in [5, 9, 13, 17]], axis=0)
+        avg_tip_dist = np.mean(
+            [np.linalg.norm(landmarks[t] - palm_center) for t in TIP]
+        )
+        if avg_tip_dist < 0.3 * palm_size:
+            return "palm_closed"
+
+        return "open"
+
     def close(self) -> None:
         self._landmarker.close()

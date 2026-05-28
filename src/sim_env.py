@@ -27,6 +27,16 @@ class SimEnvironment:
         self.arm_joints = self._find_joints(self.ARM_JOINTS)
         self.arm_actuators = self._find_actuators(self.ARM_JOINTS)
 
+        # Gripper joint
+        self.gripper_joint = mujoco.mj_name2id(
+            self.model, mujoco.mjtObj.mjOBJ_JOINT, "gripper"
+        )
+        self.gripper_actuator = mujoco.mj_name2id(
+            self.model, mujoco.mjtObj.mjOBJ_ACTUATOR, "gripper"
+        )
+        self.gripper_qposadr = self.model.jnt_qposadr[self.gripper_joint]
+        self.gripper_range = self.model.jnt_range[self.gripper_joint]
+
         # EEF body (gripper is the last body before EEF frame)
         self.eef_body = self._find_body("gripper")
 
@@ -64,6 +74,27 @@ class SimEnvironment:
 
     def set_control(self, q: np.ndarray) -> None:
         self.data.ctrl[self.arm_actuators] = q
+
+    def set_gripper(self, position: float) -> None:
+        """Set gripper joint position.
+
+        Args:
+            position: Joint angle in radians (0 = closed, ~1.4 = open)
+        """
+        self.data.ctrl[self.gripper_actuator] = np.clip(
+            position, self.gripper_range[0], self.gripper_range[1]
+        )
+
+    def reset(self) -> None:
+        """Reset arm to zero position and open gripper."""
+        self.data.qpos[self.arm_qposadr] = 0.0
+        self.data.qvel[self.arm_dofadr] = 0.0
+        self.data.ctrl[self.arm_actuators] = 0.0
+        # Open gripper slightly
+        open_pos = self.gripper_range[1] * 0.8
+        self.data.qpos[self.gripper_qposadr] = open_pos
+        self.data.ctrl[self.gripper_actuator] = open_pos
+        mujoco.mj_forward(self.model, self.data)
 
     def step(self) -> None:
         mujoco.mj_step(self.model, self.data)
