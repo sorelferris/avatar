@@ -2,3 +2,4 @@ __pycache__/
 .marscode/
 .pytest_cache/
 MUJOCO_LOG.TXT
+uv.lock

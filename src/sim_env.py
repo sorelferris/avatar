@@ -24,8 +24,25 @@ class SimEnvironment:
         self.model.opt.timestep = 0.002  # 500Hz physics
 
         # Find arm joint indices
-        self.arm_joints = self._find_joints(self.ARM_JOINTS)
-        self.arm_actuators = self._find_actuators(self.ARM_JOINTS)
+        if "so102" in xml_path:
+            self.arm_joint_names = [
+                "shoulder_pan",
+                "shoulder_lift",
+                "elbow_flex",
+                "wrist_flex",
+                "wrist_yaw",
+                "wrist_roll",
+            ]
+        else:
+            self.arm_joint_names = [
+                "shoulder_pan",
+                "shoulder_lift",
+                "elbow_flex",
+                "wrist_flex",
+                "wrist_roll",
+            ]
+        self.arm_joints = self._find_joints(self.arm_joint_names)
+        self.arm_actuators = self._find_actuators(self.arm_joint_names)
 
         # Gripper joint
         self.gripper_joint = mujoco.mj_name2id(

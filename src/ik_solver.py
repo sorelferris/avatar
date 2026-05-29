@@ -30,13 +30,23 @@ class IKSolver:
 
         # Arm joints (exclude gripper/fixed joints)
         if arm_joint_names is None:
-            arm_joint_names = [
-                "shoulder_pan",
-                "shoulder_lift",
-                "elbow_flex",
-                "wrist_flex",
-                "wrist_roll",
-            ]
+            if "so102" in urdf_path:
+                arm_joint_names = [
+                    "shoulder_pan",
+                    "shoulder_lift",
+                    "elbow_flex",
+                    "wrist_flex",
+                    "wrist_yaw",
+                    "wrist_roll",
+                ]
+            else:
+                arm_joint_names = [
+                    "shoulder_pan",
+                    "shoulder_lift",
+                    "elbow_flex",
+                    "wrist_flex",
+                    "wrist_roll",
+                ]
         self._arm_joint_ids = []
         self._arm_q_ids = []
         for name in arm_joint_names:
