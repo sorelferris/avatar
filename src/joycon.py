@@ -40,6 +40,7 @@ class JoyconManager:
         self._devices: dict[str, JoyconDevice] = {}
         self._running = False
         self._thread: threading.Thread | None = None
+        self._lock = threading.Lock()
 
         # Callbacks
         self.on_button: Callable[[Side, str, bool], None] | None = None
@@ -48,7 +49,25 @@ class JoyconManager:
 
     def scan(self, timeout: float = 5.0) -> int:
         """Scan for Joycon devices. Returns number of devices found."""
-        ...
+        with self._lock:
+            try:
+                from pyjoycon import JoyConManager
+            except ImportError:
+                logger.warning("pyjoycon not installed, cannot scan")
+                return 0
+
+            manager = JoyConManager()
+            joycons = manager.get_joycons()
+            count = 0
+
+            for mac, instance in joycons.items():
+                if mac not in self._devices:
+                    device = JoyconDevice(mac, instance)
+                    self._devices[mac] = device
+                    count += 1
+                    logger.info(f"Found Joycon: {mac}")
+
+            return count
 
     def start(self) -> None:
         """Start the event polling thread."""
@@ -72,7 +91,9 @@ class JoyconManager:
     def _poll_loop(self) -> None:
         """Background polling loop."""
         while self._running:
-            for device in list(self._devices.values()):
+            with self._lock:
+                devices = list(self._devices.values())
+            for device in devices:
                 self._poll_device(device)
             time.sleep(self.poll_interval)
 
@@ -127,12 +148,22 @@ class JoyconManager:
 
     def get_state(self, mac: str) -> JoyconState | None:
         """Get current state of a device by MAC address."""
-        ...
+        with self._lock:
+            device = self._devices.get(mac)
+            return device._last_state if device else None
 
     def get_left_mac(self) -> str | None:
         """Get MAC address of left Joycon."""
-        ...
+        with self._lock:
+            for device in self._devices.values():
+                if device.side == Side.LEFT:
+                    return device.mac
+            return None
 
     def get_right_mac(self) -> str | None:
         """Get MAC address of right Joycon."""
-        ...
+        with self._lock:
+            for device in self._devices.values():
+                if device.side == Side.RIGHT:
+                    return device.mac
+            return None
