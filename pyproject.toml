@@ -12,6 +12,9 @@ dependencies = [
     "pin>=4.0",
     "torch>=2.0",
     "timm>=0.9",
+    "hidapi>=0.15.0",
+    "joycon-python>=0.2.4",
+    "pyglm>=2.8.3",
 ]
 
 [project.optional-dependencies]
