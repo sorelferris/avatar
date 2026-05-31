@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import Callable, Any
 import threading
 import logging
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -73,12 +74,56 @@ class JoyconManager:
         while self._running:
             for device in list(self._devices.values()):
                 self._poll_device(device)
-            import time
-            time.sleep(self._poll_interval)
+            time.sleep(self.poll_interval)
 
     def _poll_device(self, device: JoyconDevice) -> None:
-        """Poll a single device for state changes. To be implemented in task 4."""
-        pass
+        """Poll a single device and dispatch events on state change."""
+        try:
+            status = device._instance.get_status()
+        except Exception as e:
+            logger.warning(f"Failed to poll {device.mac}: {e}")
+            return
+
+        current_state = self._parse_status(status, device.side)
+
+        if device._last_state is not None:
+            self._dispatch_events(device, device._last_state, current_state)
+
+        device._last_state = current_state
+
+    def _parse_status(self, status: dict, side: Side | None) -> JoyconState:
+        """Parse pyjoycon status dict into JoyconState."""
+        buttons = status.get("buttons", {})
+        sticks = status.get("sticks", {})
+        accel = status.get("accel", (0, 0, 0))
+        gyro = status.get("gyro", (0, 0, 0))
+        return JoyconState(
+            buttons=buttons,
+            sticks=sticks,
+            accel=tuple(accel),
+            gyro=tuple(gyro),
+        )
+
+    def _dispatch_events(self, device: JoyconDevice, old: JoyconState, new: JoyconState) -> None:
+        """Compare states and dispatch callback events."""
+        side = device.side or Side.LEFT
+
+        # Button events
+        for key, pressed in new.buttons.items():
+            was_pressed = old.buttons.get(key, False)
+            if pressed != was_pressed and self.on_button:
+                self.on_button(side, key, pressed)
+
+        # Stick events (dispatch when value changes significantly)
+        for stick_name, (x, y) in new.sticks.items():
+            old_x, old_y = old.sticks.get(stick_name, (0, 0))
+            if abs(x - old_x) > 0.01 or abs(y - old_y) > 0.01:
+                if self.on_stick:
+                    self.on_stick(side, x, y)
+
+        # IMU events
+        if self.on_imu:
+            self.on_imu(side, new.accel, new.gyro)
 
     def get_state(self, mac: str) -> JoyconState | None:
         """Get current state of a device by MAC address."""
