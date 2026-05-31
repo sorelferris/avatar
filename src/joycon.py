@@ -63,11 +63,24 @@ class JoyconManager:
             for mac, instance in joycons.items():
                 if mac not in self._devices:
                     device = JoyconDevice(mac, instance)
+                    device.side = self._detect_side(instance)
                     self._devices[mac] = device
                     count += 1
-                    logger.info(f"Found Joycon: {mac}")
+                    logger.info(f"Found Joycon: {mac} ({device.side.value})")
 
             return count
+
+    def _detect_side(self, instance: Any) -> Side:
+        """Detect if this is a left or right Joycon."""
+        try:
+            device_type = instance.get_device_type()
+            if "left" in str(device_type).lower():
+                return Side.LEFT
+            elif "right" in str(device_type).lower():
+                return Side.RIGHT
+        except Exception:
+            pass
+        return Side.LEFT # default
 
     def start(self) -> None:
         """Start the event polling thread."""
