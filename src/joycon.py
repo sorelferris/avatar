@@ -35,7 +35,7 @@ class JoyconManager:
     """Manages all Joycon devices and dispatches events via callbacks."""
 
     def __init__(self, poll_interval: float = 0.01):
-        self._poll_interval = poll_interval
+        self.poll_interval = poll_interval
         self._devices: dict[str, JoyconDevice] = {}
         self._running = False
         self._thread: threading.Thread | None = None
