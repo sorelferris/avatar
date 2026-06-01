@@ -12,15 +12,20 @@ dependencies = [
     "pin>=4.0",
     "torch>=2.0",
     "timm>=0.9",
-    "hidapi>=0.15.0",
     "joycon-python>=0.2.4",
+    "hid>=1.0.9",
     "pyglm>=2.8.3",
+    "pygame>=2.6.1",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",
 ]
+
+[[tool.uv.index]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+default = true
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
