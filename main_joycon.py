@@ -17,7 +17,6 @@ URDF = "assets/SO101/so101_new_calib.urdf"
 XML = "assets/SO101/scene.xml"
 
 GRIPPER_CLOSED = 0.0
-GRIPPER_OPEN = 1.2
 
 # 控制参数
 STICK_SENSITIVITY = 0.002  # 每帧位置增量
@@ -35,8 +34,7 @@ def main() -> None:
     viz = Visualizer(sim.model, sim.data)
 
     # 初始化夹爪状态
-    gripper_pos = GRIPPER_OPEN
-    gripper_toggle_pending = False
+    gripper_pos = sim.gripper_range[1] * 0.8
 
     # 获取初始末端位置作为控制起点
     initial_pos = sim.get_eef_position()
@@ -75,7 +73,7 @@ def main() -> None:
 
             # 夹爪切换检测
             if joycon.get_gripper_toggle():
-                gripper_pos = GRIPPER_CLOSED if gripper_pos > (GRIPPER_CLOSED + GRIPPER_OPEN) / 2 else GRIPPER_OPEN
+                gripper_pos = GRIPPER_CLOSED if gripper_pos > sim.gripper_range[1] * 0.4 else sim.gripper_range[1] * 0.8
                 print(f"Gripper: {'open' if gripper_pos > 0.6 else 'closed'}")
 
             sim.set_gripper(gripper_pos)
@@ -85,7 +83,9 @@ def main() -> None:
                 sim.step()
 
             # 可视化更新
-            viz.update_viewer(current_target, None)
+            viz.update_viewer(None, current_target)
+
+            time.sleep(0.02)
 
             # 按键退出
             # （JoyCon 无键盘输入，通过 MuJoCo viewer 窗口关闭或手动 Ctrl+C）
