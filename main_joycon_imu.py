@@ -18,7 +18,6 @@ XML = "assets/SO101/scene.xml"
 
 # 控制参数
 ATTITUDE_SENSITIVITY = 0.5   # 姿态欧拉角到位置偏移的映射系数
-POSITION_SENSITIVITY = 0.01  # 位置增量系数（加速度积分用）
 MAX_POSITION_DELTA = 0.05    # 每步最大位置变化
 
 
@@ -45,27 +44,39 @@ def main() -> None:
     except Exception:
         print("MuJoCo viewer not available, running headless")
 
+    # ZR 状态跟踪
+    zr_was_pressed = False
+
     try:
         while True:
+            # ZR 上升沿：记录基准（在 get_R_imu_delta 内部处理）
+            # ZR 下降沿：重置基准
+            if zr_was_pressed and not joycon.is_ZR_pressed():
+                joycon.reset_imu_baseline()
+                # 重置位置到初始位置
+                current_target_pos = initial_pos.copy()
+                print("ZR released - baseline reset, position restored")
+            zr_was_pressed = joycon.is_ZR_pressed()
+
             # 获取 IMU 相对偏移
             delta = joycon.get_R_imu_delta()
             att_delta = delta["attitude"]
 
             # 姿态偏移（Roll/Pitch/Yaw）-> 位置增量
-            # ZR 按下时 att_delta 非零，松开后归零
             position_change = np.array([
-                att_delta[0] * ATTITUDE_SENSITIVITY,  # Roll -> X
-                att_delta[1] * ATTITUDE_SENSITIVITY,  # Pitch -> Y
-                att_delta[2] * ATTITUDE_SENSITIVITY,  # Yaw -> Z
+                att_delta.x * ATTITUDE_SENSITIVITY,
+                att_delta.y * ATTITUDE_SENSITIVITY,
+                att_delta.z * ATTITUDE_SENSITIVITY,
             ])
             position_change = np.clip(position_change, -MAX_POSITION_DELTA, MAX_POSITION_DELTA)
             current_target_pos += position_change
 
-            # 限幅（球形工作空间）
+            # 限幅（球形工作空间，相对于初始位置）
             max_radius = 0.36
-            norm = np.linalg.norm(current_target_pos)
+            relative_pos = current_target_pos - initial_pos
+            norm = np.linalg.norm(relative_pos)
             if norm > max_radius:
-                current_target_pos *= max_radius / norm
+                current_target_pos = initial_pos + relative_pos * (max_radius / norm)
 
             # IK 求解
             q_current = sim.get_joint_positions()
@@ -73,9 +84,10 @@ def main() -> None:
             sim.set_control(q_new)
 
             # 夹爪切换检测
+            gripper_threshold = sim.gripper_range[1] * 0.1
             if joycon.get_gripper_toggle():
-                gripper_pos = 0.0 if gripper_pos > 0.1 else sim.gripper_range[1] * 0.8
-                state = "open" if gripper_pos > 0.1 else "closed"
+                gripper_pos = 0.0 if gripper_pos > gripper_threshold else sim.gripper_range[1] * 0.8
+                state = "open" if gripper_pos > gripper_threshold else "closed"
                 print(f"Gripper: {state}")
 
             sim.set_gripper(gripper_pos)
