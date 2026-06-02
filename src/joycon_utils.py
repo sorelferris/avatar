@@ -155,7 +155,7 @@ class JoyCon:
     def get_R_imu_delta(self) -> dict:
         """获取按住 ZR 期间的 IMU 相对偏移（相对于基准姿态）。
 
-        首次调用（ZR 刚按下）记录基准姿态，返回全零。
+        仅在 ZR 从未按→按下的转换时记录基准姿态，返回全零。
         之后每次返回相对基准姿态的欧拉角变化。
         """
         status = self.get_status()
@@ -164,10 +164,20 @@ class JoyCon:
         # 欧拉角（弧度，ZYX 顺序）
         rotation = R["rotation"]
 
-        if not hasattr(self, "_imu_baseline"):
+        zr_current = bool(R["buttons"]["right"]["zr"])
+        zr_last = getattr(self, "_ZR_last", False)
+
+        # ZR 上升沿：记录基准
+        if zr_current and not zr_last:
             self._imu_baseline = {
                 "rotation": rotation,
             }
+            self._ZR_last = zr_current
+            return {"position": (0.0, 0.0, 0.0), "attitude": (0.0, 0.0, 0.0)}
+
+        self._ZR_last = zr_current
+
+        if not hasattr(self, "_imu_baseline"):
             return {"position": (0.0, 0.0, 0.0), "attitude": (0.0, 0.0, 0.0)}
 
         # 计算相对偏移
