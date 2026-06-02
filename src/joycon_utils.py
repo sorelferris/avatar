@@ -68,6 +68,47 @@ class JoyCon:
             "R": self.joycon_R.get_status(),
         }
 
+    def get_imu(self):
+        """
+        Example return value:
+        {
+            'L': {
+                'direction': vec3( 0.998765, 0.00501661, -0.0494945 ),
+                'rotation': vec3( -0.013572, 0.0494452, 0.00568786 ),
+                'accel': [(-107, 44, -3876), (-107, 42, -3878), (-108, 44, -3879)],
+                'gyro': [
+                    (-0.8907046731924599, 2.2625047713255784, -0.9855178830520237),
+                    (-0.8907046731924599, 0.5186508424048086, -0.9855178830520237),
+                    (-0.8907046731924599, 1.3905778068651935, -0.11359091859163895)
+                ]
+            },
+            'R': {
+                'direction': vec3( 0.980642, -0.188617, 0.0525824 ),
+                'rotation': vec3( 0.008294, -0.0551612, -0.189301 ),
+                'accel': [(352, -152, -4135), (350, -148, -4133), (351, -149, -4130)],
+                'gyro': [
+                    (1.9629631042480469, -2.1580238342285156, -0.08889007568359375),
+                    (0.9629631042480469, -2.1580238342285156, -1.0888900756835938),
+                    (0.9629631042480469, -2.1580238342285156, -2.0888900756835938)
+                ]
+            }
+        }
+        """
+        return {
+            "L": {
+                "direction": self.joycon_L.direction,
+                "rotation": self.joycon_L.rotation,
+                "accel": self.joycon_L.accel,
+                "gyro": self.joycon_L.gyro,
+            },
+            "R": {
+                "direction": self.joycon_R.direction,
+                "rotation": self.joycon_R.rotation,
+                "accel": self.joycon_R.accel,
+                "gyro": self.joycon_R.gyro,
+            },
+        }
+
     # 右摇杆归一化值（死区过滤后）
     # 返回 (x, y)，范围约 -1 到 1
     def get_R_analog(self) -> tuple[float, float]:
@@ -111,6 +152,44 @@ class JoyCon:
     def get_gripper_toggle(self) -> bool:
         return self.get_A_pressed()
 
+    def get_R_imu_delta(self) -> dict:
+        """获取按住 ZR 期间的 IMU 相对偏移（相对于基准姿态）。
+
+        首次调用（ZR 刚按下）记录基准姿态，返回全零。
+        之后每次返回相对基准姿态的欧拉角变化。
+        """
+        status = self.get_status()
+        R = status["R"]
+
+        # 欧拉角（弧度，ZYX 顺序）
+        rotation = R["rotation"]
+
+        if not hasattr(self, "_imu_baseline"):
+            self._imu_baseline = {
+                "rotation": rotation,
+            }
+            return {"position": (0.0, 0.0, 0.0), "attitude": (0.0, 0.0, 0.0)}
+
+        # 计算相对偏移
+        pos_delta = (0.0, 0.0, 0.0)  # 加速度积分暂用零
+        att_delta = (
+            rotation.x - self._imu_baseline["rotation"].x,
+            rotation.y - self._imu_baseline["rotation"].y,
+            rotation.z - self._imu_baseline["rotation"].z,
+        )
+
+        return {"position": pos_delta, "attitude": att_delta}
+
+    def is_ZR_pressed(self) -> bool:
+        """检查 ZR 肩键是否按下。"""
+        status = self.get_status()
+        return bool(status["R"]["buttons"]["right"]["zr"])
+
+    def reset_imu_baseline(self) -> None:
+        """重置 IMU 基准姿态（松开 ZR 时调用）。"""
+        if hasattr(self, "_imu_baseline"):
+            delattr(self, "_imu_baseline")
+
 
 def main():
     joycon = JoyCon()
@@ -118,8 +197,7 @@ def main():
     with Live(refresh_per_second=10) as live_display:
         while True:
             try:
-                joycon.get_status()
-                live_display.update(Pretty(joycon.get_status()), refresh=True)
+                live_display.update(Pretty(joycon.get_imu()), refresh=True)
                 time.sleep(0.1)
             except KeyboardInterrupt:
                 break
