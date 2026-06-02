@@ -15,7 +15,6 @@ dependencies = [
     "joycon-python>=0.2.4",
     "hid>=1.0.9",
     "pyglm>=2.8.3",
-    "pygame>=2.6.1",
 ]
 
 [project.optional-dependencies]
