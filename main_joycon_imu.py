@@ -44,21 +44,19 @@ def main() -> None:
     except Exception:
         print("MuJoCo viewer not available, running headless")
 
-    # ZR 状态跟踪
-    zr_was_pressed = False
-
     try:
         while True:
-            # ZR 上升沿：记录基准（在 get_R_imu_delta 内部处理）
-            # ZR 下降沿：重置基准
-            if zr_was_pressed and not joycon.is_ZR_pressed():
-                joycon.reset_imu_baseline()
-                # 重置位置到初始位置
-                current_target_pos = initial_pos.copy()
-                print("ZR released - baseline reset, position restored")
-            zr_was_pressed = joycon.is_ZR_pressed()
+            # ZR 未按下：不执行任何控制，保持当前位置
+            if not joycon.is_ZR_pressed():
+                # 执行物理步骤但不更新控制目标
+                for _ in range(10):
+                    sim.step()
+                time.sleep(0.02)
+                continue
 
-            # 获取 IMU 相对偏移
+            # ZR 上升沿：记录基准（在 get_R_imu_delta 内部处理）
+
+            # ZR 按下：获取 IMU 偏移并控制
             delta = joycon.get_R_imu_delta()
             att_delta = delta["attitude"]
 
