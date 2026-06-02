@@ -48,6 +48,9 @@ def main() -> None:
         while True:
             # ZR 未按下：不执行任何控制，保持当前位置
             if not joycon.is_ZR_pressed():
+                # 重置 IMU 基准，防止释放后继续返回偏移
+                if hasattr(joycon, "_imu_baseline"):
+                    joycon.reset_imu_baseline()
                 # 执行物理步骤但不更新控制目标
                 for _ in range(10):
                     sim.step()
