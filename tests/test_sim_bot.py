@@ -143,3 +143,25 @@ def test_solve_ik_moves_eef_toward_target():
         f"IK step did not reduce EEF distance: "
         f"before={eef_before_dist:.4f} after={eef_after_dist:.4f}"
     )
+
+
+def test_solve_ik_respects_max_delta():
+    """Single-step IK should change joints by at most IKSolver.max_delta."""
+    bot = SimBot(
+        urdf_path=URDF,
+        right_arm_joints=SO101_ARM,
+        left_arm_joints=SO101_ARM,
+        right_eef_frame=SO101_EEF,
+        left_eef_frame=SO101_EEF,
+        viewer=False,
+    )
+    eef = bot.get_eef_position("right")
+    # Target 1m away (unreachable in one step)
+    target = eef + np.array([1.0, 0.0, 0.0])
+
+    q_init = bot.get_arm_angles("right")
+    q_new = bot.solve_ik("right", target, q_init=q_init)
+
+    # IKSolver default max_delta=0.1 rad per joint; for 5 joints the
+    # Euclidean norm of a full [-0.1, 0.1]^5 delta vector is sqrt(5)*0.1 ≈ 0.224
+    assert np.linalg.norm(q_new - q_init) <= np.sqrt(5) * 0.1 + 1e-6

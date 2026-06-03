@@ -88,6 +88,15 @@ class SimBot:
                 return i
         raise KeyError(f"Unknown joint name: {name!r}")
 
+    def _validate_side(self, side: str) -> str:
+        """Validate side parameter and return it unchanged.
+
+        Raises ValueError if side is not 'right' or 'left'.
+        """
+        if side not in ("right", "left"):
+            raise ValueError(f"side must be 'right' or 'left', got {side!r}")
+        return side
+
     def get_angles(self) -> np.ndarray:
         """Return the full joint angle vector of the robot."""
         return self._robot.angle_vector().copy()
@@ -126,8 +135,7 @@ class SimBot:
         side : str
             "right" or "left".
         """
-        if side not in ("right", "left"):
-            raise ValueError(f"side must be 'right' or 'left', got {side!r}")
+        self._validate_side(side)
         names = self._right_arm_joints if side == "right" else self._left_arm_joints
         result = np.zeros(len(names))
         for i, name in enumerate(names):
@@ -142,8 +150,7 @@ class SimBot:
         side : str
             "right" or "left".
         """
-        if side not in ("right", "left"):
-            raise ValueError(f"side must be 'right' or 'left', got {side!r}")
+        self._validate_side(side)
         eef_frame = self._right_eef_frame if side == "right" else self._left_eef_frame
         for link in self._robot.link_list:
             if link.name == eef_frame:
@@ -158,6 +165,9 @@ class SimBot:
     ) -> np.ndarray:
         """Run a single IK step toward the target end-effector position.
 
+        Performs ONE damped-least-squares step. For multi-step convergence
+        to a target, use ``IKSolver.solve_to_convergence()`` directly.
+
         Parameters
         ----------
         side : str
@@ -171,10 +181,9 @@ class SimBot:
         -------
         q_new : np.ndarray, shape (n_arm_joints,)
             New arm joint angles after one IK step. Joint-limit-clamped
-            and step-size-limited (damping/max_delta from IKSolver).
+            and step-size-limited (max_delta=0.1 rad by default).
         """
-        if side not in ("right", "left"):
-            raise ValueError(f"side must be 'right' or 'left', got {side!r}")
+        self._validate_side(side)
         ik = self._ik_right if side == "right" else self._ik_left
         if q_init is None:
             q_init = self.get_arm_angles(side)
