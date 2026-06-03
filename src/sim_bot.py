@@ -5,6 +5,8 @@ solvers for the left and right arms. Designed as a thin layer for JoyCon
 teleoperation visualization; can also be driven standalone for animation
 demos.
 """
+import time
+
 import numpy as np
 from skrobot.model import RobotModel
 from skrobot.viewers import ViserViewer
@@ -191,3 +193,33 @@ class SimBot:
             np.asarray(q_init, dtype=np.float64),
             np.asarray(target_pos, dtype=np.float64),
         )
+
+    def show(self, open_browser: bool = True) -> None:
+        """Print viewer URL and optionally open in browser.
+
+        No-op if ``viewer=False`` was passed to the constructor.
+        """
+        if self._viewer is not None:
+            self._viewer.show(open_browser=open_browser)
+
+    def redraw(self) -> None:
+        """Force a viewer redraw. No-op if viewer is disabled."""
+        if self._viewer is not None:
+            self._viewer.redraw()
+
+    def wait_until_close(self) -> None:
+        """Block until KeyboardInterrupt (Ctrl-C). No-op if viewer disabled."""
+        if self._viewer is not None:
+            self._viewer.wait_until_close()
+        else:
+            # Block on KeyboardInterrupt for parity with viewer mode.
+            try:
+                while True:
+                    time.sleep(1.0)
+            except KeyboardInterrupt:
+                pass
+
+    def close(self) -> None:
+        """Close the viewer. Idempotent; no-op if viewer disabled."""
+        if self._viewer is not None:
+            self._viewer.close()

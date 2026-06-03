@@ -165,3 +165,21 @@ def test_solve_ik_respects_max_delta():
     # IKSolver default max_delta=0.1 rad per joint; for 5 joints the
     # Euclidean norm of a full [-0.1, 0.1]^5 delta vector is sqrt(5)*0.1 ≈ 0.224
     assert np.linalg.norm(q_new - q_init) <= np.sqrt(5) * 0.1 + 1e-6
+
+
+def test_close_is_idempotent():
+    """close() can be called multiple times without error.
+
+    Only meaningful with viewer=True (otherwise no viewer to close).
+    """
+    bot = SimBot(
+        urdf_path=URDF,
+        right_arm_joints=SO101_ARM,
+        left_arm_joints=SO101_ARM,
+        right_eef_frame=SO101_EEF,
+        left_eef_frame=SO101_EEF,
+        viewer=False,
+    )
+    # When viewer=False, _viewer is None; close should be a no-op.
+    bot.close()
+    bot.close()  # must not raise
