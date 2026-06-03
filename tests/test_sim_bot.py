@@ -48,3 +48,31 @@ def test_get_angles_returns_full_vector():
     # SO101 URDF has 6 joints (5 arm + 1 gripper)
     assert angles.shape == (6,)
     assert np.allclose(angles, 0.0)
+
+
+def test_set_joints_round_trip_and_delta():
+    """set_joints updates only the joints in the dict (delta semantics).
+
+    Setting joint A then joint B should leave A at its value, not reset
+    to zero.
+    """
+    bot = SimBot(
+        urdf_path=URDF,
+        right_arm_joints=SO101_ARM,
+        left_arm_joints=SO101_ARM,
+        right_eef_frame=SO101_EEF,
+        left_eef_frame=SO101_EEF,
+        viewer=False,
+    )
+
+    # Set shoulder_pan to 0.3
+    bot.set_joints({"shoulder_pan": 0.3})
+    angles = bot.get_angles()
+    # SO101 URDF joint order: gripper(0), wrist_roll(1), wrist_flex(2), elbow_flex(3), shoulder_lift(4), shoulder_pan(5)
+    assert np.isclose(angles[5], 0.3), "shoulder_pan should be 0.3"
+
+    # Set elbow_flex to -0.5; shoulder_pan should still be 0.3
+    bot.set_joints({"elbow_flex": -0.5})
+    angles = bot.get_angles()
+    assert np.isclose(angles[5], 0.3), "shoulder_pan should still be 0.3"
+    assert np.isclose(angles[3], -0.5), "elbow_flex should be -0.5"

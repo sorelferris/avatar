@@ -68,3 +68,37 @@ class SimBot:
     def get_angles(self) -> np.ndarray:
         """Return the full joint angle vector of the robot."""
         return self._robot.angle_vector().copy()
+
+    def set_joints(
+        self,
+        name_to_angle: dict[str, float],
+        redraw: bool | None = None,
+    ) -> None:
+        """Set joint angles by name, keeping unspecified joints unchanged.
+
+        Parameters
+        ----------
+        name_to_angle : dict[str, float]
+            Mapping from joint name (as in ``robot.joint_list``) to
+            target angle in radians. Joints not in the dict keep their
+            current value (delta semantics).
+        redraw : bool | None
+            If None (default), use the constructor's ``auto_redraw``.
+            Pass False to skip redraw for this call, True to force it.
+        """
+        current = self._robot.angle_vector().copy()
+        for name, angle in name_to_angle.items():
+            # Locate joint by name in robot.joint_list
+            joint_index = None
+            for i, j in enumerate(self._robot.joint_list):
+                if j.name == name:
+                    joint_index = i
+                    break
+            if joint_index is None:
+                raise KeyError(f"Unknown joint name: {name!r}")
+            current[joint_index] = float(angle)
+        self._robot.angle_vector(current)
+
+        should_redraw = self._auto_redraw if redraw is None else redraw
+        if should_redraw and self._viewer is not None:
+            self._viewer.redraw()
