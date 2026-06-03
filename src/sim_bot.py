@@ -65,6 +65,16 @@ class SimBot:
         else:
             self._viewer = None
 
+    def _joint_index(self, name: str) -> int:
+        """Return the index of joint `name` in robot.joint_list.
+
+        Raises KeyError if the joint name is not found.
+        """
+        for i, j in enumerate(self._robot.joint_list):
+            if j.name == name:
+                return i
+        raise KeyError(f"Unknown joint name: {name!r}")
+
     def get_angles(self) -> np.ndarray:
         """Return the full joint angle vector of the robot."""
         return self._robot.angle_vector().copy()
@@ -88,15 +98,7 @@ class SimBot:
         """
         current = self._robot.angle_vector().copy()
         for name, angle in name_to_angle.items():
-            # Locate joint by name in robot.joint_list
-            joint_index = None
-            for i, j in enumerate(self._robot.joint_list):
-                if j.name == name:
-                    joint_index = i
-                    break
-            if joint_index is None:
-                raise KeyError(f"Unknown joint name: {name!r}")
-            current[joint_index] = float(angle)
+            current[self._joint_index(name)] = float(angle)
         self._robot.angle_vector(current)
 
         should_redraw = self._auto_redraw if redraw is None else redraw
@@ -111,14 +113,12 @@ class SimBot:
         side : str
             "right" or "left".
         """
+        if side not in ("right", "left"):
+            raise ValueError(f"side must be 'right' or 'left', got {side!r}")
         names = self._right_arm_joints if side == "right" else self._left_arm_joints
-        full = self._robot.angle_vector()
         result = np.zeros(len(names))
         for i, name in enumerate(names):
-            for j in self._robot.joint_list:
-                if j.name == name:
-                    result[i] = j.joint_angle()
-                    break
+            result[i] = self._robot.joint_list[self._joint_index(name)].joint_angle()
         return result
 
     def get_eef_position(self, side: str) -> np.ndarray:
@@ -129,6 +129,8 @@ class SimBot:
         side : str
             "right" or "left".
         """
+        if side not in ("right", "left"):
+            raise ValueError(f"side must be 'right' or 'left', got {side!r}")
         eef_frame = self._right_eef_frame if side == "right" else self._left_eef_frame
         for link in self._robot.link_list:
             if link.name == eef_frame:
