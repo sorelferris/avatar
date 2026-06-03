@@ -76,3 +76,16 @@ def test_set_joints_round_trip_and_delta():
     angles = bot.get_angles()
     assert np.isclose(angles[5], 0.3), "shoulder_pan should still be 0.3"
     assert np.isclose(angles[3], -0.5), "elbow_flex should be -0.5"
+
+
+def test_set_joints_unknown_name_raises_keyerror():
+    bot = SimBot(
+        urdf_path=URDF,
+        right_arm_joints=SO101_ARM,
+        left_arm_joints=SO101_ARM,
+        right_eef_frame=SO101_EEF,
+        left_eef_frame=SO101_EEF,
+        viewer=False,
+    )
+    with pytest.raises(KeyError):
+        bot.set_joints({"nonexistent_joint": 0.0})
