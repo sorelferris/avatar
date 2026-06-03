@@ -1,7 +1,15 @@
-"""MuJoCo simulation environment for SO101 arm."""
+"""MuJoCo simulation environment for SO101 arm (legacy) + SimBot demo."""
 
 import mujoco
+import time
+
 import numpy as np
+
+from src.sim_bot import SimBot
+
+# ---------------------------------------------------------------------------
+# SimEnvironment — preserved for test_so102.py backward compatibility
+# ---------------------------------------------------------------------------
 
 
 class SimEnvironment:
@@ -118,3 +126,41 @@ class SimEnvironment:
 
     def forward(self) -> None:
         mujoco.mj_forward(self.model, self.data)
+
+
+# ---------------------------------------------------------------------------
+# SimBot demo — right-arm interpolation animation
+# ---------------------------------------------------------------------------
+
+URDF = "/home/sorel/workspace/robot_description/robotic_description.urdf"
+
+RIGHT_ARM_JOINTS = [f"right_arm_joint{i}" for i in range(1, 8)]
+RIGHT_ARM_TARGET = [0.5, 0.3, -0.2, -1.0, 0.8, -0.5, 0.2]
+
+
+def main() -> None:
+    """Run the SimBot demo: right arm interpolates from zero to target over ~10s."""
+    bot = SimBot(urdf_path=URDF, viewer=True)
+    print(f"Joint list:\n{bot._robot.joint_list}")
+    print(f"Initial angles: {bot.get_angles()}")
+    bot.show()
+
+    num_steps = 50
+    step_delay = 0.2
+    time.sleep(1.0)  # let the browser connect
+
+    for i in range(num_steps):
+        t = i / (num_steps - 1)
+        # Build per-step dict; joints not listed keep their current value
+        # (delta semantics — torso/left arm stay at zero throughout).
+        angles = {
+            name: t * target for name, target in zip(RIGHT_ARM_JOINTS, RIGHT_ARM_TARGET)
+        }
+        bot.set_joints(angles)
+        time.sleep(step_delay)
+
+    bot.wait_until_close()
+
+
+if __name__ == "__main__":
+    main()
