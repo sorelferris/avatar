@@ -64,3 +64,7 @@ class SimBot:
             self._viewer.add(self._robot)
         else:
             self._viewer = None
+
+    def get_angles(self) -> np.ndarray:
+        """Return the full joint angle vector of the robot."""
+        return self._robot.angle_vector().copy()
