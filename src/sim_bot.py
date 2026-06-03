@@ -65,6 +65,19 @@ class SimBot:
         else:
             self._viewer = None
 
+        # IK solvers (one per arm). Pinocchio model is independent of
+        # the skrobot RobotModel and the ViserViewer.
+        self._ik_right = IKSolver(
+            urdf_path=urdf_path,
+            eef_frame=right_eef_frame,
+            arm_joint_names=self._right_arm_joints,
+        )
+        self._ik_left = IKSolver(
+            urdf_path=urdf_path,
+            eef_frame=left_eef_frame,
+            arm_joint_names=self._left_arm_joints,
+        )
+
     def _joint_index(self, name: str) -> int:
         """Return the index of joint `name` in robot.joint_list.
 
@@ -136,3 +149,36 @@ class SimBot:
             if link.name == eef_frame:
                 return np.asarray(link.worldpos(), dtype=np.float64)
         raise KeyError(f"EEF frame {eef_frame!r} not found in robot link_list")
+
+    def solve_ik(
+        self,
+        side: str,
+        target_pos: np.ndarray,
+        q_init: np.ndarray | None = None,
+    ) -> np.ndarray:
+        """Run a single IK step toward the target end-effector position.
+
+        Parameters
+        ----------
+        side : str
+            "right" or "left".
+        target_pos : array-like, shape (3,)
+            Desired EEF position in world frame.
+        q_init : array-like, shape (n_arm_joints,) | None
+            Initial arm joint angles. If None, uses current angles.
+
+        Returns
+        -------
+        q_new : np.ndarray, shape (n_arm_joints,)
+            New arm joint angles after one IK step. Joint-limit-clamped
+            and step-size-limited (damping/max_delta from IKSolver).
+        """
+        if side not in ("right", "left"):
+            raise ValueError(f"side must be 'right' or 'left', got {side!r}")
+        ik = self._ik_right if side == "right" else self._ik_left
+        if q_init is None:
+            q_init = self.get_arm_angles(side)
+        return ik.solve(
+            np.asarray(q_init, dtype=np.float64),
+            np.asarray(target_pos, dtype=np.float64),
+        )

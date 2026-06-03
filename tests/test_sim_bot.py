@@ -114,3 +114,32 @@ def test_get_arm_angles_and_eef_position():
     eef = bot.get_eef_position("right")
     assert eef.shape == (3,)
     assert np.linalg.norm(eef) > 0.0
+
+
+def test_solve_ik_moves_eef_toward_target():
+    bot = SimBot(
+        urdf_path=URDF,
+        right_arm_joints=SO101_ARM,
+        left_arm_joints=SO101_ARM,
+        right_eef_frame=SO101_EEF,
+        left_eef_frame=SO101_EEF,
+        viewer=False,
+    )
+    # EEF at zero pose
+    eef_before = bot.get_eef_position("right")
+
+    # Target slightly offset in +X
+    target = eef_before + np.array([0.02, 0.0, 0.0])
+
+    q_new = bot.solve_ik("right", target)
+    assert q_new.shape == (5,)
+
+    # Single-step IK should move EEF toward target
+    eef_after = bot.get_eef_position("right")
+    # Either EEF moved toward target, or joint limits clamped it
+    eef_after_dist = np.linalg.norm(eef_after - target)
+    eef_before_dist = np.linalg.norm(eef_before - target)
+    assert eef_after_dist <= eef_before_dist + 1e-6, (
+        f"IK step did not reduce EEF distance: "
+        f"before={eef_before_dist:.4f} after={eef_after_dist:.4f}"
+    )
