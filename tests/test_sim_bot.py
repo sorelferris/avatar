@@ -183,3 +183,35 @@ def test_close_is_idempotent():
     # When viewer=False, _viewer is None; close should be a no-op.
     bot.close()
     bot.close()  # must not raise
+
+
+def test_close_calls_viewer_close_idempotently(monkeypatch):
+    """close() should call viewer.close() and tolerate multiple calls.
+
+    Uses a fake viewer that counts close() calls to verify the SimBot
+    delegates correctly. We don't construct a real ViserViewer because
+    that would open a browser and bind a port.
+    """
+    bot = SimBot(
+        urdf_path=URDF,
+        right_arm_joints=SO101_ARM,
+        left_arm_joints=SO101_ARM,
+        right_eef_frame=SO101_EEF,
+        left_eef_frame=SO101_EEF,
+        viewer=False,
+    )
+    # Inject a fake viewer (the real one would need a browser)
+    close_call_count = [0]
+
+    class FakeViewer:
+        def close(self):
+            close_call_count[0] += 1
+
+        def redraw(self):
+            pass
+
+    bot._viewer = FakeViewer()
+
+    bot.close()
+    bot.close()  # must not raise; close is called twice
+    assert close_call_count[0] == 2

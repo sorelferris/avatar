@@ -208,14 +208,23 @@ class SimBot:
             self._viewer.redraw()
 
     def wait_until_close(self) -> None:
-        """Block until KeyboardInterrupt (Ctrl-C). No-op if viewer disabled."""
+        """Block until KeyboardInterrupt (Ctrl-C).
+
+        When ``viewer=True`` (default), delegates to the underlying
+        ViserViewer's ``wait_until_close``. When ``viewer=False``,
+        blocks on an infinite sleep until Ctrl-C for behavior parity.
+
+        This keeps the script alive in both modes; without it the
+        viser server would shut down via its atexit handler as soon
+        as the script's main work finished.
+        """
         if self._viewer is not None:
             self._viewer.wait_until_close()
         else:
-            # Block on KeyboardInterrupt for parity with viewer mode.
             try:
-                while True:
-                    time.sleep(1.0)
+                # Block indefinitely; KeyboardInterrupt will wake us up
+                # immediately, so polling interval doesn't matter.
+                time.sleep(float("inf"))
             except KeyboardInterrupt:
                 pass
 
