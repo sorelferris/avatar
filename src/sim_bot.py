@@ -103,6 +103,11 @@ class SimBot:
         """Return the full joint angle vector of the robot."""
         return self._robot.angle_vector().copy()
 
+    @property
+    def joint_names(self) -> list[str]:
+        """Names of all joints in the robot, in the same order as ``get_angles()``."""
+        return [j.name for j in self._robot.joint_list]
+
     def set_joints(
         self,
         name_to_angle: dict[str, float],

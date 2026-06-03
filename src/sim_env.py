@@ -141,7 +141,7 @@ RIGHT_ARM_TARGET = [0.5, 0.3, -0.2, -1.0, 0.8, -0.5, 0.2]
 def main() -> None:
     """Run the SimBot demo: right arm interpolates from zero to target over ~10s."""
     bot = SimBot(urdf_path=URDF, viewer=True)
-    print(f"Joint list:\n{bot._robot.joint_list}")
+    print(f"Joint list:\n{bot.joint_names}")
     print(f"Initial angles: {bot.get_angles()}")
     bot.show()
 
