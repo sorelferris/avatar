@@ -102,3 +102,35 @@ class SimBot:
         should_redraw = self._auto_redraw if redraw is None else redraw
         if should_redraw and self._viewer is not None:
             self._viewer.redraw()
+
+    def get_arm_angles(self, side: str) -> np.ndarray:
+        """Return the joint angles of one arm in kinematic order.
+
+        Parameters
+        ----------
+        side : str
+            "right" or "left".
+        """
+        names = self._right_arm_joints if side == "right" else self._left_arm_joints
+        full = self._robot.angle_vector()
+        result = np.zeros(len(names))
+        for i, name in enumerate(names):
+            for j in self._robot.joint_list:
+                if j.name == name:
+                    result[i] = j.joint_angle()
+                    break
+        return result
+
+    def get_eef_position(self, side: str) -> np.ndarray:
+        """Return the end-effector position in world frame.
+
+        Parameters
+        ----------
+        side : str
+            "right" or "left".
+        """
+        eef_frame = self._right_eef_frame if side == "right" else self._left_eef_frame
+        for link in self._robot.link_list:
+            if link.name == eef_frame:
+                return np.asarray(link.worldpos(), dtype=np.float64)
+        raise KeyError(f"EEF frame {eef_frame!r} not found in robot link_list")

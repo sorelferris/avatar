@@ -89,3 +89,28 @@ def test_set_joints_unknown_name_raises_keyerror():
     )
     with pytest.raises(KeyError):
         bot.set_joints({"nonexistent_joint": 0.0})
+
+
+def test_get_arm_angles_and_eef_position():
+    bot = SimBot(
+        urdf_path=URDF,
+        right_arm_joints=SO101_ARM,
+        left_arm_joints=SO101_ARM,
+        right_eef_frame=SO101_EEF,
+        left_eef_frame=SO101_EEF,
+        viewer=False,
+    )
+    bot.set_joints({"shoulder_pan": 0.3, "elbow_flex": -0.5})
+
+    # 5-DoF arm slice
+    right_angles = bot.get_arm_angles("right")
+    assert right_angles.shape == (5,)
+    # SO101 URDF 关节顺序: gripper(0), wrist_roll(1), wrist_flex(2), elbow_flex(3), shoulder_lift(4), shoulder_pan(5)
+    # right_arm_joints 顺序: [shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll]
+    assert np.isclose(right_angles[0], 0.3)   # shoulder_pan
+    assert np.isclose(right_angles[2], -0.5)  # elbow_flex
+
+    # EEF position is a 3-vector
+    eef = bot.get_eef_position("right")
+    assert eef.shape == (3,)
+    assert np.linalg.norm(eef) > 0.0
