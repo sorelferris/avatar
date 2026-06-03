@@ -62,16 +62,9 @@ class SimBot:
         eef_frame 必须是 pinocchio model 中存在的 frame 名（默认取末端 link 名）。"""
 
     # —— 关节设置（auto_redraw 默认 True，可 redraw=False 关单次）——
-    def set_joint(self, name: str, angle: float, redraw: bool | None = None) -> None
     def set_joints(self, name_to_angle: dict[str, float], redraw: bool | None = None) -> None
-    def set_arm_angles(
-        self,
-        side: str | np.ndarray,           # "right"/"left"（str）或 14-DoF 向量（np.ndarray）
-        av: np.ndarray | None = None,     # 7-DoF 单臂；当 side 是 np.ndarray 时忽略
-        redraw: bool | None = None,
-    ) -> None
-    # 重载判定规则：isinstance(side, np.ndarray) → 14-DoF 双臂；否则 side 必为 "right"/"left"，av 必为 7-DoF
-    def set_full_angles(self, av_n: np.ndarray, redraw: bool | None = None) -> None
+    #   未在 dict 中的关节保持当前值（delta 语义）。设单个关节：set_joints({"right_arm_joint1": 0.5})。
+    #   设多关节：set_joints({"right_arm_joint1": 0.5, "left_arm_joint2": -0.3, ...})。
 
     # —— 读取 ——
     def get_angles(self) -> np.ndarray                    # 完整 N-DoF
@@ -93,28 +86,28 @@ class SimBot:
     def close(self) -> None
 ```
 
-**`side` 参数**只接受字符串 `"right"` 或 `"left"`；14-DoF 双臂向量通过 `set_arm_angles(av_14)` 重载传入。
+**`side` 参数**只接受字符串 `"right"` 或 `"left"`。
 
 ---
 
 ## 4. 行为细节
 
 ### 4.1 auto_redraw 与 redraw 参数
-- `auto_redraw=True`（默认）：每次 `set_*` 内部最后调用 `self._viewer.redraw()`
+- `auto_redraw=True`（默认）：每次 `set_joints` 内部最后调用 `self._viewer.redraw()`
 - `redraw=None` 跟随 `auto_redraw` 行为
 - `redraw=False` 跳过本次 redraw（高频场景用）
 - 显式 `redraw=True` 总是触发
 
-### 4.2 set_arm_angles 重载
-- `set_arm_angles("right", av_7)`：只设右臂 7 维
-- `set_arm_angles("left",  av_7)`：只设左臂 7 维
-- `set_arm_angles(av_14)`：双臂 14 维（顺序：右臂在前，左臂在后）
-- 内部统一转成完整 N-DoF 向量后调 `robot.angle_vector()`，避免索引错位
+### 4.2 set_joints delta 语义
+- 未在 dict 中的关节**保持当前值**（不重置为 0）
+- 内部实现：先 `get_angles()` 拿到当前完整 N-DoF 向量，再按 dict 更新对应位置，再 `robot.angle_vector()`
+- 已知关节名必须在 `robot.joint_list` 中；否则 `KeyError`
+- 关节值会被 `robot.angle_vector()` 自动 clip 到 joint limits（skrobot 内置行为）
 
 ### 4.3 IK
 - `SimBot.__init__` 时为左右臂各实例化一个 `IKSolver`（`src/ik_solver.py`）
-- `solve_ik(side, target, q_init=None)`：选对应 `_ik_<side>` 调一次 `solve()`（单步）
-- 不在 `SimBot` 内做多步收敛；调用方如需多步收敛，调 `IKSolver.solve_to_convergence()`（已在 ik_solver.py 暴露）
+- `solve_ik(side, target, q_init=None)`：选对应 `_ik_<side>` 调一次 `solve()`（**单步**，适合实时遥操作）
+- 调用方如需多步收敛，可直接用 `IKSolver.solve_to_convergence()`（`ik_solver.py` 已暴露）
 
 ### 4.4 viewer 关闭与脚本退出
 - `close()` 显式关 viewer，幂等
@@ -126,8 +119,8 @@ class SimBot:
 ## 5. 数据流（JoyCon 集成示例）
 
 ```
-JoyCon L  ──IK──▶  SimBot.solve_ik("left",  target_L)  ──▶  set_arm_angles("left",  q_L)
-JoyCon R  ──IK──▶  SimBot.solve_ik("right", target_R)  ──▶  set_arm_angles("right", q_R)
+JoyCon L  ──IK──▶  SimBot.solve_ik("left",  target_L)  ──▶  set_joints({"left_arm_joint1":  q_L[0], ...})
+JoyCon R  ──IK──▶  SimBot.solve_ik("right", target_R)  ──▶  set_joints({"right_arm_joint1": q_R[0], ...})
                                                                 │
                                               auto_redraw=True   │
                                                                 ▼
@@ -153,11 +146,11 @@ main_joycon.py       ← 不在本次改动范围（可后续用 SimBot 重写�
 ## 7. 测试策略
 
 - **单元测试**：`tests/test_sim_bot.py`
-  - `set_joint` / `set_joints` round-trip：设后 `get_angles()` 读回一致
-  - `set_arm_angles("right", av)`：`get_eef_position("right")` 与 forward kinematics 一致
-  - `set_arm_angles(av_14)`：左右臂 EEF 位置与各自 forward kinematics 一致
-  - `solve_ik("right", target)`：调用 `solve_to_convergence(max_iter=50, tol=1e-3)` 后 `forward_kinematics` 误差 < 1e-3 m（用 ik_solver 已有的多步收敛方法）
+  - `set_joints({...})` round-trip：设后 `get_angles()` 读回一致
+  - `set_joints` delta 语义：先设 `{"right_arm_joint1": 0.5}`，再设 `{"left_arm_joint1": 0.3}`，然后 `get_angles()` 中 `right_arm_joint1` 仍为 0.5（左关节动不影响右关节）
+  - `solve_ik("right", target)`：调一次后 `get_eef_position("right")` 相比调前位置向 target 方向移动（验证单步工作）
   - `viewer=False` 模式：构造不启动浏览器、不抛错
+  - `set_joints` 未知关节名：`KeyError`
 - **不测**：浏览器端 UI 渲染（依赖外部进程）
 - **手动验证**：`sim_env.py` demo 能跑、动画可见
 
@@ -176,7 +169,7 @@ main_joycon.py       ← 不在本次改动范围（可后续用 SimBot 重写�
 ## 9. 错误处理
 
 - `urdf_path` 不存在：`FileNotFoundError`（让 pinocchio 自然抛出）
-- `set_joint` 关节名不存在：`KeyError`
-- `set_arm_angles` 向量长度不匹配：`ValueError`
-- `solve_ik` 不可达：返回 `q_init`（ik_solver 已 clip 到 joint limits）
+- `set_joints` 关节名不在 `robot.joint_list` 中：`KeyError`
+- `set_joints` 关节值越界：skrobot `robot.angle_vector()` 自动 clip
+- `solve_ik` 不可达：返回 `solve_to_convergence` 的最终 `q`（可能未收敛）
 - viewer 重复 `close()`：幂等
