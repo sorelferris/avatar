@@ -6,67 +6,100 @@ from rich.live import Live
 from rich.pretty import Pretty
 
 
+# Combining multiple inheritance to create a JoyCon class that supports both gyro tracking and button events
+class MyJoyCon(pyjoycon.GyroTrackingJoyCon, pyjoycon.ButtonEventJoyCon): ...
+
+
 class JoyCon:
     def __init__(self, calibration_seconds=2.0):
-        l_id = pyjoycon.get_L_id()
-        r_id = pyjoycon.get_R_id()
-        if None in l_id:
-            raise RuntimeError(f"Could not find Joy-Con (L). ID: {l_id}")
-        if None in r_id:
-            raise RuntimeError(f"Could not find Joy-Con (R). ID: {r_id}")
-
-        self.joycon_L = pyjoycon.GyroTrackingJoyCon(*l_id)
-        self.joycon_R = pyjoycon.GyroTrackingJoyCon(*r_id)
+        assert None not in pyjoycon.get_L_id(), "Left Joy-Con not found"
+        assert None not in pyjoycon.get_R_id(), "Right Joy-Con not found"
+        self.joycon_L = MyJoyCon(*pyjoycon.get_L_id())
+        self.joycon_R = MyJoyCon(*pyjoycon.get_R_id())
         self.calibrate(seconds=calibration_seconds)
 
     def calibrate(self, seconds=2.0, timeout=5.0):
-        print(
-            f"[cyan]Calibrating Joy-Con (L/R) for {seconds:.1f}s. Keep both controllers still..."
-        )
+        print(f"[blue]Calibrating Joy-Con (L&R). Keep still...[/blue]")
         self.joycon_L.calibrate(seconds=seconds)
         self.joycon_R.calibrate(seconds=seconds)
-
         deadline = time.monotonic() + max(timeout, seconds + 1.0)
         while time.monotonic() < deadline:
             if not self.joycon_L.is_calibrating and not self.joycon_R.is_calibrating:
-                print("[green]Calibration complete.")
+                print("[green]Calibration complete.[/green]")
                 return
             time.sleep(0.05)
-
-        print("[yellow]Calibration timeout. Continue with current calibration values.")
+        print("[yellow]Calibration timeout. Use current calibration values.[/yellow]")
 
     def get_status(self):
         """
-        example return value:
+        Example return value:
         {
             'L': {
-                'battery': {'charging': 0, 'level': 4},
-                'buttons': {
-                    'right': {'y': 0, 'x': 0, 'b': 0, 'a': 0, 'sr': 0, 'sl': 0, 'r': 0, 'zr': 0},
-                    'shared': {'minus': 0, 'plus': 0, 'r-stick': 0, 'l-stick': 0, 'home': 0, 'capture': 0, 'charging-grip': 0},
-                    'left': {'down': 0, 'up': 0, 'right': 0, 'left': 0, 'sr': 0, 'sl': 0, 'l': 0, 'zl': 0}
-                },
-                'analog-sticks': {'left': {'horizontal': 2003, 'vertical': 2337}, 'right': {'horizontal': 0, 'vertical': 0}},
-                'accel': {'x': -105, 'y': -32, 'z': 3877},
-                'gyro': {'x': -1.0015141093773683, 'y': -1.1970182296621088, 'z': -0.8760858835208521}
+                'battery': 4,
+                'buttons': {'down': 0, 'up': 0, 'right': 0, 'left': 0, 'sl': 0, 'sr': 0, 'l': 0, 'zl': 0, 'minus': 0, 'l-stick': 0, 'capture': 0},
+                'stick': [2003, 2337],  # [H, V]
+                'accel': [-105, -32, 3877],
+                'gyro': [-1.0015, -1.1970, -0.8760]
             },
             'R': {
-                'battery': {'charging': 0, 'level': 4},
-                'buttons': {
-                    'right': {'y': 0, 'x': 0, 'b': 0, 'a': 0, 'sr': 0, 'sl': 0, 'r': 0, 'zr': 0},
-                    'shared': {'minus': 0, 'plus': 0, 'r-stick': 0, 'l-stick': 0, 'home': 0, 'capture': 0, 'charging-grip': 0},
-                    'left': {'down': 0, 'up': 0, 'right': 0, 'left': 0, 'sr': 0, 'sl': 0, 'l': 0, 'zl': 0}
-                },
-                'analog-sticks': {'left': {'horizontal': 0, 'vertical': 0}, 'right': {'horizontal': 2101, 'vertical': 1820}},
-                'accel': {'x': 339, 'y': -149, 'z': -4133},
-                'gyro': {'x': 0.239898681640625, 'y': -2.8484840393066406, 'z': -0.27777862548828125}
+                'battery': 4,
+                'buttons': {'y': 0, 'x': 0, 'b': 0, 'a': 0, 'sr': 0, 'sl': 0, 'r': 0, 'zr': 0, 'plus': 0, 'r-stick': 0, 'home': 0},
+                'stick': [2101, 1820],  # [H, V]
+                'accel': [339, -149, -4133],
+                'gyro': [0.2398, -2.8484, -0.2777]
             }
         }
         """
-        return {
-            "L": self.joycon_L.get_status(),
-            "R": self.joycon_R.get_status(),
+        raw_L = self.joycon_L.get_status()
+        raw_R = self.joycon_R.get_status()
+
+        # Clean up left hand controller status
+        btn_L = {}
+        # Merge left hand specific directional buttons, shoulder buttons, and shared buttons
+        btn_L.update(raw_L["buttons"]["left"])
+        btn_L.update(
+            {
+                k: v
+                for k, v in raw_L["buttons"]["shared"].items()
+                if k in ["minus", "l-stick", "capture"]
+            }
+        )
+
+        clean_L = {
+            "battery": raw_L["battery"]["level"],
+            "buttons": btn_L,
+            "stick": [
+                raw_L["analog-sticks"]["left"]["horizontal"],
+                raw_L["analog-sticks"]["left"]["vertical"],
+            ],
+            "accel": [raw_L["accel"]["x"], raw_L["accel"]["y"], raw_L["accel"]["z"]],
+            "gyro": [raw_L["gyro"]["x"], raw_L["gyro"]["y"], raw_L["gyro"]["z"]],
         }
+
+        # Clean up right hand controller status
+        btn_R = {}
+        # Merge right hand specific action buttons, shoulder buttons, and shared buttons
+        btn_R.update(raw_R["buttons"]["right"])
+        btn_R.update(
+            {
+                k: v
+                for k, v in raw_R["buttons"]["shared"].items()
+                if k in ["plus", "r-stick", "home"]
+            }
+        )
+
+        clean_R = {
+            "battery": raw_R["battery"]["level"],
+            "buttons": btn_R,
+            "stick": [
+                raw_R["analog-sticks"]["right"]["horizontal"],
+                raw_R["analog-sticks"]["right"]["vertical"],
+            ],
+            "accel": [raw_R["accel"]["x"], raw_R["accel"]["y"], raw_R["accel"]["z"]],
+            "gyro": [raw_R["gyro"]["x"], raw_R["gyro"]["y"], raw_R["gyro"]["z"]],
+        }
+
+        return {"L": clean_L, "R": clean_R}
 
     def get_imu(self):
         """
@@ -96,8 +129,8 @@ class JoyCon:
         """
         return {
             "L": {
-                "direction": self.joycon_L.direction,
-                "rotation": self.joycon_L.rotation,
+                "direction": self.joycon_L.direction,  # by integrating gyro
+                "rotation": self.joycon_L.rotation,  # by integrating gyro
                 "accel": self.joycon_L.accel,
                 "gyro": self.joycon_L.gyro,
             },
@@ -109,48 +142,41 @@ class JoyCon:
             },
         }
 
-    # 右摇杆归一化值（死区过滤后）
-    # 返回 (x, y)，范围约 -1 到 1
-    def get_R_analog(self) -> tuple[float, float]:
+    def events(self):
+        # Yield events from both controllers, preferring the right hand for shared buttons
+        for event in self.joycon_R.events():
+            yield event
+        for event in self.joycon_L.events():
+            if event[0] not in ["plus", "r-stick", "home"]:
+                yield event
+
+    def get_L_analog(self, deadzone: int = 300, center: int = 2048) -> tuple:
+        """
+        Left stick horizontal/vertical values, normalized to -1 to 1 with a deadzone ±deadzone around the center (center).
+        """
         status = self.get_status()
-        R = status["R"]["analog-sticks"]["right"]
-        h = R["horizontal"]
-        v = R["vertical"]
-        # 中性值约 2048，死区 ±100
-        DEADZONE = 100
-        if abs(h - 2048) < DEADZONE:
-            h = 2048
-        if abs(v - 2048) < DEADZONE:
-            v = 2048
-        x = (h - 2048) / 2048.0  # -1 到 1
-        y = (v - 2048) / 2048.0  # -1 到 1（Y 轴反向）
+        h, v = status["L"]["stick"]  # [Horizontal, Vertical]
+        # Apply deadzone
+        h = center if abs(h - center) < deadzone else h
+        v = center if abs(v - center) < deadzone else v
+        # Normalize to -1 to 1
+        x = (h - center) / center
+        y = (v - center) / center
         return x, y
 
-    # R/ZR 肩键状态：ZR=1, R=1 都按=0, 否则=0
-    # 返回 1=上升, -1=下降, 0=静止
-    def get_R_shoulder(self) -> int:
+    def get_R_analog(self, deadzone: int = 300, center: int = 2048) -> tuple:
+        """
+        Right stick horizontal/vertical values, normalized to -1 to 1 with a deadzone ±deadzone around the center (center).
+        """
         status = self.get_status()
-        R = status["R"]["buttons"]["right"]
-        zr = R["zr"]
-        r = R["r"]
-        if zr and not r:
-            return 1  # ZR pressed = 上升
-        if r and not zr:
-            return -1  # R pressed = 下降
-        return 0
-
-    # R A 键单次按下检测（边缘触发）
-    # 首次调用返回 False，之后按一次返回 True，然后等松开再按才返回 True
-    def get_A_pressed(self) -> bool:
-        status = self.get_status()
-        current = status["R"]["buttons"]["right"]["a"]
-        pressed = current and not getattr(self, "_A_last", 0)
-        self._A_last = current
-        return pressed
-
-    # 获取夹爪命令（A 键切换）
-    def get_gripper_toggle(self) -> bool:
-        return self.get_A_pressed()
+        h, v = status["R"]["stick"]  # [Horizontal, Vertical]
+        # Apply deadzone
+        h = center if abs(h - center) < deadzone else h
+        v = center if abs(v - center) < deadzone else v
+        # Normalize to -1 to 1
+        x = (h - center) / center
+        y = (v - center) / center
+        return x, y
 
     def get_R_imu_delta(self) -> dict:
         """获取按住 ZR 期间的 IMU 相对偏移（相对于基准姿态）。
@@ -191,25 +217,48 @@ class JoyCon:
         return {"position": pos_delta, "attitude": att_delta}
 
     def is_ZR_pressed(self) -> bool:
-        """检查 ZR 肩键是否按下。"""
         status = self.get_status()
         return bool(status["R"]["buttons"]["right"]["zr"])
-
-    def reset_imu_baseline(self) -> None:
-        """重置 IMU 基准姿态（松开 ZR 时调用）。"""
-        if hasattr(self, "_imu_baseline"):
-            delattr(self, "_imu_baseline")
 
 
 def main():
     joycon = JoyCon()
+    button_events_queue = []
+    button_events_queue_size = 10  # Display the last n events
 
     with Live(refresh_per_second=10) as live_display:
         while True:
             try:
-                live_display.update(Pretty(joycon.get_imu()), refresh=True)
+                imu = joycon.get_imu()
+                status = joycon.get_status()
+                button_events_queue.extend(joycon.events())
+                # Keep only the most recent events in the queue
+                button_events_queue = button_events_queue[-button_events_queue_size:]
+                L_analog = joycon.get_L_analog()
+                R_analog = joycon.get_R_analog()
+                live_display.update(
+                    Pretty(
+                        {
+                            "imu": imu,
+                            "status": status,
+                            "button_events_history": button_events_queue,
+                            "L_analog": L_analog,
+                            "R_analog": R_analog,
+                        }
+                    ),
+                    refresh=True,
+                )
+
+                direction_L = imu["L"]["direction"]
+                direction_R = imu["R"]["direction"]
+
                 time.sleep(0.1)
+
             except KeyboardInterrupt:
+                print("[yellow]Exiting...")
+                break
+            except Exception as e:
+                print(f"[bright_red]Error: {e}[/bright_red]")
                 break
 
 

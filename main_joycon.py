@@ -9,9 +9,8 @@ import time
 import numpy as np
 
 from src.joycon_utils import JoyCon
-from src.sim_env import SimEnvironment
+from src.sim_env import MujocoEnvironment
 from src.ik_solver import IKSolver
-from src.visualizer import Visualizer
 
 URDF = "assets/SO101/so101_new_calib.urdf"
 XML = "assets/SO101/scene.xml"
@@ -19,32 +18,23 @@ XML = "assets/SO101/scene.xml"
 GRIPPER_CLOSED = 0.0
 
 # 控制参数
-STICK_SENSITIVITY = 0.002  # 每帧位置增量
-Z_SENSITIVITY = 0.003      # Z 轴每帧增量
-MAX_POSITION_DELTA = 0.05   # 每步最大位置变化
+STICK_SENSITIVITY = 0.005  # 每帧位置增量
+Z_SENSITIVITY = 0.005  # Z 轴每帧增量
+MAX_POSITION_DELTA = 0.05  # 每步最大位置变化
 
 
 def main() -> None:
-    # 初始化组件
     joycon = JoyCon(calibration_seconds=2.0)
-    print("JoyCon initialized and calibrated.")
-
-    sim = SimEnvironment(XML)
+    env = MujocoEnvironment(XML)
     ik = IKSolver(URDF, damping=0.1, max_delta=0.1)
-    viz = Visualizer(sim.model, sim.data)
 
     # 初始化夹爪状态
-    gripper_pos = sim.gripper_range[1] * 0.8
+    gripper_pos = env.gripper_range[1] * 0.8
 
     # 获取初始末端位置作为控制起点
-    initial_pos = sim.get_eef_position()
+    initial_pos = env.get_eef_position()
     current_target = initial_pos.copy()
     print(f"Initial EEF position: {initial_pos}")
-
-    try:
-        viz.start_viewer()
-    except Exception:
-        print("MuJoCo viewer not available, running headless")
 
     try:
         joycon.get_R_analog()  # 初始化 A_pressed 状态
@@ -54,7 +44,9 @@ def main() -> None:
             z_dir = joycon.get_R_shoulder()
 
             # 计算位置增量
-            delta = np.array([dx * STICK_SENSITIVITY, -dy * STICK_SENSITIVITY, z_dir * Z_SENSITIVITY])
+            delta = np.array(
+                [dx * STICK_SENSITIVITY, -dy * STICK_SENSITIVITY, z_dir * Z_SENSITIVITY]
+            )
             delta = np.clip(delta, -MAX_POSITION_DELTA, MAX_POSITION_DELTA)
 
             # 更新目标位置
@@ -73,7 +65,11 @@ def main() -> None:
 
             # 夹爪切换检测
             if joycon.get_gripper_toggle():
-                gripper_pos = GRIPPER_CLOSED if gripper_pos > sim.gripper_range[1] * 0.4 else sim.gripper_range[1] * 0.8
+                gripper_pos = (
+                    GRIPPER_CLOSED
+                    if gripper_pos > sim.gripper_range[1] * 0.4
+                    else sim.gripper_range[1] * 0.8
+                )
                 print(f"Gripper: {'open' if gripper_pos > 0.6 else 'closed'}")
 
             sim.set_gripper(gripper_pos)
@@ -93,7 +89,6 @@ def main() -> None:
     except KeyboardInterrupt:
         print("\nExiting...")
 
-    viz.close()
     print("Done.")
 
 

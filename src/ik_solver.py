@@ -102,7 +102,10 @@ class IKSolver:
 
         # Get full Jacobian, extract arm columns
         J6 = pin.getFrameJacobian(
-            self._model, self._data, self._eef_id, pin.ReferenceFrame.LOCAL_WORLD_ALIGNED
+            self._model,
+            self._data,
+            self._eef_id,
+            pin.ReferenceFrame.LOCAL_WORLD_ALIGNED,
         )
         J_pos = J6[:3, self._arm_q_ids]  # (3, n_arm_joints)
         return J_pos

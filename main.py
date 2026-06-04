@@ -25,7 +25,9 @@ GRIPPER_NEUTRAL = 0.6  # default when idle
 
 def main() -> None:
     camera = CameraThread(camera_id=4, fps=30)
+    print(f"Using camera ID {camera._camera_id} at {camera._fps} FPS")
     detector = HandDetector(max_hands=1)
+    print("Initialized hand detector.")
     processor = CoordinateProcessor(
         hand_range=0.3, robot_range=0.4, ema_alpha=0.3, max_radius=0.36
     )
