@@ -207,13 +207,141 @@ class JoyCon:
         return x, y
 
     def display_dashboard(self):
-        """Display a live dashboard of Joy-Con status and events."""
+        """Display a live 3D dashboard of Joy-Con IMU direction using matplotlib."""
+        import matplotlib.pyplot as plt
+
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection="3d")
+        plt.subplots_adjust(left=0.05, right=0.95, top=0.95, bottom=0.05)
+
+        fig.text(0.5, 0.01, "Ctrl+C to exit", ha="center", fontsize=9, color="gray")
+
+        with Live(refresh_per_second=30) as live_display:
+            while True:
+                try:
+                    imu = self.get_imu()
+                    status = self.get_status()
+                    events = list(self.events())
+
+                    dir_L = imu["L"]["direction"]
+                    dir_R = imu["R"]["direction"]
+
+                    ax.clear()
+
+                    # Draw world coordinate axes (gray, subtle)
+                    ax.quiver(
+                        0,
+                        0,
+                        0,
+                        1.2,
+                        0,
+                        0,
+                        color="gray",
+                        alpha=0.4,
+                        arrow_length_ratio=0.1,
+                    )
+                    ax.quiver(
+                        0,
+                        0,
+                        0,
+                        0,
+                        -1.2,
+                        0,
+                        color="gray",
+                        alpha=0.4,
+                        arrow_length_ratio=0.1,
+                    )
+                    ax.quiver(
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1.2,
+                        color="gray",
+                        alpha=0.4,
+                        arrow_length_ratio=0.1,
+                    )
+                    ax.text(1.3, 0, 0, "X", color="gray", fontsize=9)
+                    ax.text(0, -1.3, 0, "Y", color="gray", fontsize=9)
+                    ax.text(0, 0, 1.3, "Z", color="gray", fontsize=9)
+
+                    # Left Joy-Con direction (cyan)
+                    ax.quiver(
+                        0,
+                        0,
+                        0,
+                        dir_L[1],
+                        dir_L[0],
+                        -dir_L[2],
+                        color="blue",
+                        arrow_length_ratio=0.15,
+                        linewidth=2.5,
+                        label="L",
+                    )
+
+                    # Right Joy-Con direction (magenta)
+                    ax.quiver(
+                        0,
+                        0,
+                        0,
+                        dir_R[1],
+                        dir_R[0],
+                        -dir_R[2],
+                        color="red",
+                        arrow_length_ratio=0.15,
+                        linewidth=2.5,
+                        label="R",
+                    )
+
+                    ax.set_xlim([-1.5, 1.5])
+                    ax.set_ylim([-1.5, 1.5])
+                    ax.set_zlim([-1.5, 1.5])
+                    ax.set_xlabel("X", fontsize=10)
+                    ax.set_ylabel("Y", fontsize=10)
+                    ax.set_zlabel("Z", fontsize=10)
+                    ax.legend(loc="upper left")
+
+                    # Button status as title
+                    btn_L_pressed = [k for k, v in status["L"]["buttons"].items() if v]
+                    btn_R_pressed = [k for k, v in status["R"]["buttons"].items() if v]
+                    L_btns = ", ".join(btn_L_pressed) if btn_L_pressed else "—"
+                    R_btns = ", ".join(btn_R_pressed) if btn_R_pressed else "—"
+
+                    ax.set_title(f"L: {L_btns} | R: {R_btns}", fontsize=9)
+
+                    plt.draw()
+                    plt.pause(0.001)
+
+                    live_display.update(
+                        Pretty(
+                            {
+                                "L direction": list(dir_L),
+                                "R direction": list(dir_R),
+                                "L buttons": btn_L_pressed,
+                                "R buttons": btn_R_pressed,
+                                "event count": len(events),
+                            }
+                        ),
+                        refresh=True,
+                    )
+                    time.sleep(0.033)
+
+                except KeyboardInterrupt:
+                    plt.close(fig)
+                    print("[yellow]Exiting 3D dashboard...[/yellow]")
+                    break
+                except Exception as e:
+                    print(f"[bright_red]Error: {e}[/bright_red]")
+                    break
 
 
 def main():
     joycon = JoyCon()
     button_events_queue = []
     button_events_queue_size = 10  # Display the last n events
+    joycon.display_dashboard()
+    quit()
 
     with Live(refresh_per_second=10) as live_display:
         while True:
