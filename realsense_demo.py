@@ -82,6 +82,9 @@ class HandDetector:
         self.hands_detector = None
         self.pipeline = None
         self.align = None
+        self.status = {}  # store current hand status (position, gesture, etc.)
+        self.motion = {}  # store motion delta
+        self.motion_anchor = {}  # baseline position for motion calculation
 
     def _setup_hands_detector(self):
         print("Creating MediaPipe Hands...")
@@ -147,8 +150,7 @@ class HandDetector:
         d_min, d_max = IDEAL_DISTANCE_RANGE_MM
         d_hint = f"Ideal distance: {d_min}-{d_max}mm"
         if depth_mm is None:
-            hint_text = "Move hand into view"
-            color = (0, 255, 255)
+            return
         else:
             if depth_mm < d_min:
                 hint_text = f"Too close ({depth_mm:.0f}mm). {d_hint}"
@@ -173,11 +175,32 @@ class HandDetector:
         cv2.rectangle(color_image, box_top_left, box_bottom_right, (0, 0, 0), -1)
         cv2.putText(color_image, hint_text, (x, y), font, font_scale, color, thickness)
 
+    def _sample_depth_mm(
+        self, depth_frame, x_depth: int, y_depth: int, radius: int = 2
+    ):
+        dw, dh = depth_frame.get_width(), depth_frame.get_height()
+        x0 = max(0, x_depth - radius)
+        x1 = min(dw - 1, x_depth + radius)
+        y0 = max(0, y_depth - radius)
+        y1 = min(dh - 1, y_depth + radius)
+
+        valid_depths = []
+        for yy in range(y0, y1 + 1):
+            for xx in range(x0, x1 + 1):
+                depth_m = depth_frame.get_distance(xx, yy)
+                if depth_m > 0:
+                    valid_depths.append(depth_m * 1000.0)
+
+        if not valid_depths:
+            return 0.0
+        return float(np.median(valid_depths))
+
     def _process_frame(self, color_frame, depth_frame):
         color_image = np.asarray(color_frame.get_data())  # BGR format
         color_image = cv2.flip(color_image, 1)  # provide as mirror view
 
         rgb_image = cv2.cvtColor(color_image, cv2.COLOR_BGR2RGB)  # RGB format
+
         # Process the RGB image with MediaPipe Hands to get hand landmarks and handedness
         result = self.hands_detector.process(rgb_image)
         # Process detected hands
@@ -194,8 +217,6 @@ class HandDetector:
                     landmark_list=hand_landmarks,
                     connections=MP_HANDS.HAND_CONNECTIONS,
                 )
-                # Count fingers
-                num_fingers = count_fingers(landmarks, hand_label)
                 # Read wrist position and depth
                 wrist_x, wrist_y = landmarks[0].x, landmarks[0].y
                 dw, dh = depth_frame.get_width(), depth_frame.get_height()
@@ -208,15 +229,58 @@ class HandDetector:
 
                 x_depth = (dw - 1) - x_view
                 y_depth = y_view
-                depth_mm = depth_frame.get_distance(x_depth, y_depth) * 1000
+                depth_mm = self._sample_depth_mm(depth_frame, x_depth, y_depth)
                 # Annotate hand info on the color image
-                lines = [f"{hand_label} Hand", f"Fingers: {num_fingers}"]
-                if depth_mm is not None:
-                    lines.append(f"Depth: {depth_mm:.0f}mm")
-                self._draw_hand_overlay(color_image, hand_label, lines)
-                self._draw_distance_hint(color_image, depth_mm)
+                num_fingers = count_fingers(landmarks, hand_label)
+                gesture = read_gesture(landmarks, hand_label)
 
-        # self._draw_distance_hint(color_image, hand_depths_mm)
+                self.status[hand_label] = {
+                    "x": x_view,
+                    "y": y_view,
+                    "depth_mm": depth_mm,
+                    "fingers": num_fingers,
+                    "gesture": gesture,
+                }
+
+                # Motion baseline is captured when the hand enters five-finger-open.
+                # Relative displacement is only valid while the hand stays open.
+                if num_fingers == 5 and depth_mm is not None:
+                    # Capture motion baseline when hand is fully open and depth is valid
+                    if self.motion_anchor.get(hand_label) is None:
+                        self.motion_anchor[hand_label] = {
+                            "x": x_view,
+                            "y": y_view,
+                            "depth_mm": depth_mm,
+                        }
+                    # Calculate relative displacement
+                    anchor = self.motion_anchor[hand_label]
+                    self.motion[hand_label] = {
+                        "x": x_view - anchor["x"],
+                        "y": y_view - anchor["y"],
+                        "depth_mm": depth_mm - anchor["depth_mm"],
+                    }
+                else:
+                    self.motion_anchor[hand_label] = {"x": 0, "y": 0, "depth_mm": 0}
+
+                lines = [f"{hand_label} Hand"]
+                if hand_label in self.status:
+                    info = self.status[hand_label]
+                    lines.append(
+                        f"Gesture: {info['gesture']} ({info['fingers']} fingers)"
+                    )
+                    lines.append(f"Depth: {info['depth_mm']:.0f}mm")
+                if hand_label in self.motion:
+                    info = self.motion[hand_label]
+                    lines.append(
+                        f"Delta: ({info['x']:.0f}, {info['y']:.0f}, {info['depth_mm']:.0f}mm)"
+                    )
+                self._draw_hand_overlay(color_image, hand_label, lines)
+
+        valid_depths = [
+            x["depth_mm"] for x in self.status.values() if x["depth_mm"] is not None
+        ]
+        nearest_depth_mm = min(valid_depths) if valid_depths else None
+        self._draw_distance_hint(color_image, nearest_depth_mm)
 
         return color_image
 
