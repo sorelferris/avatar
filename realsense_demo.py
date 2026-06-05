@@ -198,9 +198,7 @@ class HandDetector:
     def _process_frame(self, color_frame, depth_frame):
         color_image = np.asarray(color_frame.get_data())  # BGR format
         color_image = cv2.flip(color_image, 1)  # provide as mirror view
-
         rgb_image = cv2.cvtColor(color_image, cv2.COLOR_BGR2RGB)  # RGB format
-
         # Process the RGB image with MediaPipe Hands to get hand landmarks and handedness
         result = self.hands_detector.process(rgb_image)
         # Process detected hands
@@ -226,14 +224,13 @@ class HandDetector:
                 y_view = int(wrist_y * dh)
                 x_view = max(0, min(x_view, dw - 1))
                 y_view = max(0, min(y_view, dh - 1))
-
                 x_depth = (dw - 1) - x_view
                 y_depth = y_view
                 depth_mm = self._sample_depth_mm(depth_frame, x_depth, y_depth)
-                # Annotate hand info on the color image
+                # Count fingers and read gesture from landmarks and hand label
                 num_fingers = count_fingers(landmarks, hand_label)
                 gesture = read_gesture(landmarks, hand_label)
-
+                # Update hand status with position, depth, finger count, and gesture
                 self.status[hand_label] = {
                     "x": x_view,
                     "y": y_view,
@@ -241,26 +238,27 @@ class HandDetector:
                     "fingers": num_fingers,
                     "gesture": gesture,
                 }
-
                 # Motion baseline is captured when the hand enters five-finger-open.
                 # Relative displacement is only valid while the hand stays open.
-                if num_fingers == 5 and depth_mm is not None:
-                    # Capture motion baseline when hand is fully open and depth is valid
-                    if self.motion_anchor.get(hand_label) is None:
-                        self.motion_anchor[hand_label] = {
-                            "x": x_view,
-                            "y": y_view,
-                            "depth_mm": depth_mm,
+                # Capture motion baseline when hand is fully open and depth is valid
+                if num_fingers == 5 and depth_mm > 100.0:
+                    # When motion anchor exists,
+                    # calculate relative motion from the last frame
+                    if self.motion_anchor.get(hand_label) is not None:
+                        # Calculate relative motion from the last frame
+                        anchor = self.motion_anchor[hand_label]
+                        self.motion[hand_label] = {
+                            "x": x_view - anchor["x"],
+                            "y": y_view - anchor["y"],
+                            "depth_mm": depth_mm - anchor["depth_mm"],
                         }
-                    # Calculate relative displacement
-                    anchor = self.motion_anchor[hand_label]
-                    self.motion[hand_label] = {
-                        "x": x_view - anchor["x"],
-                        "y": y_view - anchor["y"],
-                        "depth_mm": depth_mm - anchor["depth_mm"],
+
+                    # Store motion anchor
+                    self.motion_anchor[hand_label] = {
+                        "x": x_view,
+                        "y": y_view,
+                        "depth_mm": depth_mm,
                     }
-                else:
-                    self.motion_anchor[hand_label] = {"x": 0, "y": 0, "depth_mm": 0}
 
                 lines = [f"{hand_label} Hand"]
                 if hand_label in self.status:
