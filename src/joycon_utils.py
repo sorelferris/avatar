@@ -12,11 +12,39 @@ class MyJoyCon(pyjoycon.GyroTrackingJoyCon, pyjoycon.ButtonEventJoyCon): ...
 
 class JoyCon:
     def __init__(self, calibration_seconds=2.0):
-        assert None not in pyjoycon.get_L_id(), "Left Joy-Con not found"
-        assert None not in pyjoycon.get_R_id(), "Right Joy-Con not found"
-        self.joycon_L = MyJoyCon(*pyjoycon.get_L_id())
-        self.joycon_R = MyJoyCon(*pyjoycon.get_R_id())
+        l_id = pyjoycon.get_L_id()
+        r_id = pyjoycon.get_R_id()
+        assert None not in l_id, "Left Joy-Con not found"
+        assert None not in r_id, "Right Joy-Con not found"
+
+        self.joycon_L = self._create_with_retry(l_id, side="L")
+        self.joycon_R = self._create_with_retry(r_id, side="R")
         self.calibrate(seconds=calibration_seconds)
+
+    @staticmethod
+    def _create_with_retry(
+        device_id: tuple, side: str, retries: int = 5, delay: float = 0.1
+    ):
+        """Create a Joy-Con instance with retry for intermittent pyjoycon init race."""
+        last_err = None
+        for attempt in range(1, retries + 1):
+            try:
+                return MyJoyCon(*device_id)
+            except AssertionError as e:
+                # pyjoycon occasionally raises this during SPI subcmd handshake.
+                if "THREAD carefully" not in str(e):
+                    raise
+                last_err = e
+            except OSError as e:
+                # Temporary HID I/O failures can happen right after reconnect.
+                last_err = e
+
+            if attempt < retries:
+                time.sleep(delay)
+
+        raise RuntimeError(
+            f"Failed to initialize Joy-Con ({side}) after {retries} retries"
+        ) from last_err
 
     def calibrate(self, seconds=2.0, timeout=5.0):
         print(f"[blue]Calibrating Joy-Con (L&R). Keep still...[/blue]")
@@ -178,47 +206,8 @@ class JoyCon:
         y = (v - center) / center
         return x, y
 
-    def get_R_imu_delta(self) -> dict:
-        """获取按住 ZR 期间的 IMU 相对偏移（相对于基准姿态）。
-
-        仅在 ZR 从未按→按下的转换时记录基准姿态，返回全零。
-        之后每次返回相对基准姿态的欧拉角变化。
-        """
-        status = self.get_status()
-        R = status["R"]
-
-        # 欧拉角（弧度，ZYX 顺序）
-        rotation = R["rotation"]
-
-        zr_current = bool(R["buttons"]["right"]["zr"])
-        zr_last = getattr(self, "_ZR_last", False)
-
-        # ZR 上升沿：记录基准
-        if zr_current and not zr_last:
-            self._imu_baseline = {
-                "rotation": rotation,
-            }
-            self._ZR_last = zr_current
-            return {"position": (0.0, 0.0, 0.0), "attitude": (0.0, 0.0, 0.0)}
-
-        self._ZR_last = zr_current
-
-        if not hasattr(self, "_imu_baseline"):
-            return {"position": (0.0, 0.0, 0.0), "attitude": (0.0, 0.0, 0.0)}
-
-        # 计算相对偏移
-        pos_delta = (0.0, 0.0, 0.0)  # 加速度积分暂用零
-        att_delta = (
-            rotation.x - self._imu_baseline["rotation"].x,
-            rotation.y - self._imu_baseline["rotation"].y,
-            rotation.z - self._imu_baseline["rotation"].z,
-        )
-
-        return {"position": pos_delta, "attitude": att_delta}
-
-    def is_ZR_pressed(self) -> bool:
-        status = self.get_status()
-        return bool(status["R"]["buttons"]["right"]["zr"])
+    def display_dashboard(self):
+        """Display a live dashboard of Joy-Con status and events."""
 
 
 def main():
