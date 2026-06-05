@@ -129,9 +129,9 @@ class HandDetector:
         margin_x = 20
         start_y = 40
         line_gap = 34
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        font_scale = 0.8
-        thickness = 2
+        font = cv2.FONT_HERSHEY_COMPLEX
+        font_scale = 0.6
+        thickness = 1
         color = (0, 255, 0)
 
         is_right = hand_label == "Right"
@@ -143,7 +143,16 @@ class HandDetector:
             else:
                 x = margin_x
 
-            cv2.putText(color_image, text, (x, y), font, font_scale, color, thickness)
+            cv2.putText(
+                color_image,
+                text,
+                (x, y),
+                font,
+                font_scale,
+                color,
+                thickness,
+                cv2.LINE_AA,
+            )
 
     def _draw_distance_hint(self, color_image: np.ndarray, depth_mm: float | None):
         image_h, image_w = color_image.shape[:2]
@@ -162,7 +171,7 @@ class HandDetector:
                 hint_text = f"Distance good ({depth_mm:.0f}mm). {d_hint}"
                 color = (0, 255, 0)
 
-        font = cv2.FONT_HERSHEY_SIMPLEX
+        font = cv2.FONT_HERSHEY_COMPLEX
         font_scale = 0.5
         thickness = 1
         text_size, _ = cv2.getTextSize(hint_text, font, font_scale, thickness)
@@ -173,7 +182,16 @@ class HandDetector:
         box_top_left = (x - 10, y - text_size[1] - 10)
         box_bottom_right = (x + text_size[0] + 10, y + 10)
         cv2.rectangle(color_image, box_top_left, box_bottom_right, (0, 0, 0), -1)
-        cv2.putText(color_image, hint_text, (x, y), font, font_scale, color, thickness)
+        cv2.putText(
+            color_image,
+            hint_text,
+            (x, y),
+            font,
+            font_scale,
+            color,
+            thickness,
+            cv2.LINE_AA,
+        )
 
     def _sample_depth_mm(
         self, depth_frame, x_depth: int, y_depth: int, radius: int = 2
@@ -192,8 +210,8 @@ class HandDetector:
                     valid_depths.append(depth_m * 1000.0)
 
         if not valid_depths:
-            return 0.0
-        return float(np.median(valid_depths))
+            return 0
+        return int(np.median(valid_depths))
 
     def _process_frame(self, color_frame, depth_frame):
         color_image = np.asarray(color_frame.get_data())  # BGR format
@@ -241,7 +259,7 @@ class HandDetector:
                 # Motion baseline is captured when the hand enters five-finger-open.
                 # Relative displacement is only valid while the hand stays open.
                 # Capture motion baseline when hand is fully open and depth is valid
-                if num_fingers == 5 and depth_mm > 100.0:
+                if num_fingers == 5 and depth_mm > 100:
                     # When motion anchor exists,
                     # calculate relative motion from the last frame
                     if self.motion_anchor.get(hand_label) is not None:
@@ -259,26 +277,31 @@ class HandDetector:
                         "y": y_view,
                         "depth_mm": depth_mm,
                     }
+                else:
+                    self.motion[hand_label] = {
+                        "x": 0,
+                        "y": 0,
+                        "depth_mm": 0,
+                    }
 
                 lines = [f"{hand_label} Hand"]
                 if hand_label in self.status:
                     info = self.status[hand_label]
-                    lines.append(
-                        f"Gesture: {info['gesture']} ({info['fingers']} fingers)"
-                    )
+                    lines.append(f"{info['fingers']} fingers")
                     lines.append(f"Depth: {info['depth_mm']:.0f}mm")
                 if hand_label in self.motion:
                     info = self.motion[hand_label]
                     lines.append(
-                        f"Delta: ({info['x']:.0f}, {info['y']:.0f}, {info['depth_mm']:.0f}mm)"
+                        f"Motion: ({info['x']}, {info['y']}, {info['depth_mm']}mm)"
                     )
                 self._draw_hand_overlay(color_image, hand_label, lines)
 
-        valid_depths = [
-            x["depth_mm"] for x in self.status.values() if x["depth_mm"] is not None
-        ]
-        nearest_depth_mm = min(valid_depths) if valid_depths else None
-        self._draw_distance_hint(color_image, nearest_depth_mm)
+            # Draw distance hint based on the nearest hand's depth
+            valid_depths = [
+                x["depth_mm"] for x in self.status.values() if x["depth_mm"] is not None
+            ]
+            nearest_depth_mm = min(valid_depths) if valid_depths else None
+            self._draw_distance_hint(color_image, nearest_depth_mm)
 
         return color_image
 
@@ -291,6 +314,8 @@ class HandDetector:
 
         print(f"{self.__class__.__name__} started, press 'q' to exit...")
         try:
+            cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
+            cv2.resizeWindow(WINDOW_NAME, 1280, 720)
             while True:
                 color_frame, depth_frame = self.get_aligned_frames()
                 if color_frame is None or depth_frame is None:
