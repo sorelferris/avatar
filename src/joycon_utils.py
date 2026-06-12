@@ -340,8 +340,8 @@ def main():
     joycon = JoyCon()
     button_events_queue = []
     button_events_queue_size = 10  # Display the last n events
-    joycon.display_dashboard()
-    quit()
+    # joycon.display_dashboard()
+    # quit()
 
     with Live(refresh_per_second=10) as live_display:
         while True:

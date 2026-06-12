@@ -1,147 +1,116 @@
-"""Hand visual teleoperation for SO101 robot arm.
-
-Single-hand tracking with Pinocchio-based IK (independent of MuJoCo).
-Gestures: fist = close gripper, open = open gripper, palm_closed = reset.
-"""
-
+from pathlib import Path
 import time
 
-import cv2
-
-from src.camera import CameraThread
-from src.coordinate_processor import CoordinateProcessor
-from src.hand_detector import HandDetector
-from src.ik_solver import IKSolver
-from src.sim_env import SimEnvironment
-from src.visualizer import Visualizer
-
-URDF = "assets/SO101/so101_new_calib.urdf"
-XML = "assets/SO101/scene.xml"
-
-GRIPPER_CLOSED = 0.0  # radians
-GRIPPER_OPEN = 1.2  # radians
-GRIPPER_NEUTRAL = 0.6  # default when idle
+import numpy as np
+from skrobot import model
+from skrobot.coordinates import Coordinates
+from skrobot.viewers import ViserViewer
 
 
-def main() -> None:
-    camera = CameraThread(camera_id=4, fps=30)
-    print(f"Using camera ID {camera._camera_id} at {camera._fps} FPS")
-    detector = HandDetector(max_hands=1)
-    print("Initialized hand detector.")
-    processor = CoordinateProcessor(
-        hand_range=0.3, robot_range=0.4, ema_alpha=0.3, max_radius=0.36
+def main(urdf: Path):
+    assert urdf.exists(), f"URDF file {urdf} does not exist."
+
+    # ---------------------------------------------------------------- data
+    # Robot is the data source. We can build and mutate it independently of
+    # any viewer.
+    robot = model.RobotModel.from_urdf(urdf)
+    robot.torso_joint.joint_angle(0.75)  # Set torso to 0.75
+    for joint in robot.joint_list:
+        print(
+            f"{joint.name}: {joint.joint_angle()}, limits=[{joint.min_angle}, {joint.max_angle}]"
+        )
+    larm_links = [x for x in robot.link_list if x.name.startswith("left")]
+    larm_eef = [x for x in larm_links if x.name == "left_arm_link7"][0]
+    print(f"L arm links: {[x.name for x in larm_links]}")
+    print(f"L arm eef: {larm_eef.name}")
+    rarm_links = [x for x in robot.link_list if x.name.startswith("right")]
+    rarm_eef = [x for x in rarm_links if x.name == "right_arm_link7"][0]
+    print(f"R arm links: {[x.name for x in rarm_links]}")
+    print(f"R arm eef: {rarm_eef.name}")
+    # -------------------------------------------------------------- viewer
+    # Viewer is an output sink. It snapshots the current robot pose when
+    # redraw() is called, so we can interleave robot mutations and redraws
+    # in any order from the main thread.
+    viewer = ViserViewer()
+    viewer.add(robot)
+    viewer.show()  # starts the HTTP/WS server, prints URL — does NOT block
+
+    # Example: IK on the left arm — note the redraw after the solve.
+    # Example: IK on the left arm.
+    #
+    # Workspace note: this 7-DOF arm + torso reach is ~0.6 m from the
+    # default pose. Targets beyond that distance will fail no matter how
+    # many iterations you give the solver — the error plateaus at the
+    # reachable boundary. Keep targets inside that radius.
+    move_target = [l for l in robot.link_list if l.name == "left_arm_link7"][0]
+    target_coords = Coordinates(
+        pos=[0.50, 0.10, 0.70],  # ~0.40 m from initial pose, comfortably reachable
+        rot=[0.0, np.deg2rad(30), np.deg2rad(-30)],
     )
-    ik = IKSolver(URDF, damping=0.1, max_delta=0.1)
-    sim = SimEnvironment(XML)
-    viz = Visualizer(sim.model, sim.data)
 
-    camera.start()
+    # Recommended API: joint_list (acts on joints directly). link_list is
+    # the legacy spelling and works, but joint_list avoids a downstream
+    # union_link_list derivation step.
+    arm_joints = [
+        j
+        for j in robot.joint_list
+        if j.name == "torso_joint" or j.name.startswith("left_arm_joint")
+    ]
 
-    print("Calibrating... Show your hand to the camera.")
-    anchored = False
-    gripper_pos = GRIPPER_NEUTRAL
-    reset_pending = False
-    fps_timer = time.time()
-    frame_count = 0
-    fps = 0.0
+    result = robot.inverse_kinematics(
+        target_coords,
+        joint_list=arm_joints,
+        move_target=move_target,
+        rotation_mask=True,
+        position_mask=True,
+        stop=2000,
+        thre=0.001,
+        rthre=np.deg2rad(1.0),
+    )
 
-    try:
-        viz.start_viewer()
-    except Exception:
-        print("MuJoCo viewer not available, running headless")
+    # Diagnostic: how close did we actually get?
+    final_pos = move_target.worldpos()
+    final_rot = move_target.worldrot()
+    pos_err = np.linalg.norm(final_pos - target_coords.translation)
+    R_err = final_rot.T @ target_coords.rotation
+    cos_theta = np.clip((np.trace(R_err) - 1.0) / 2.0, -1.0, 1.0)
+    rot_err_deg = np.rad2deg(np.arccos(cos_theta))
 
-    running = True
-    while running:
-        frame = camera.get_frame()
-        if frame is None:
-            time.sleep(0.01)
-            continue
-
-        # Detect single hand
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        left_lm, right_lm, left_tip, right_tip = detector.detect(frame_rgb, frame)
-
-        # Use whichever hand is detected
-        hand_tip = left_tip if left_tip is not None else right_tip
-        hand_lm = left_lm if left_lm is not None else right_lm
-
-        # Gesture detection
-        gesture = detector.detect_gesture(hand_lm)
-
-        # Handle reset gesture
-        if gesture == "palm_closed" and not reset_pending:
-            reset_pending = True
-        if reset_pending and gesture != "palm_closed":
-            print("Reset!")
-            sim.reset()
-            processor.set_anchor(hand_tip) if hand_tip is not None else None
-            reset_pending = False
-
-        # Gripper control based on gesture
-        if gesture == "fist":
-            gripper_pos = GRIPPER_CLOSED
-        elif gesture == "open":
-            gripper_pos = GRIPPER_OPEN
-        # else: keep current position
-
-        # Anchor on first detection
-        if not anchored and hand_tip is not None:
-            processor.set_anchor(hand_tip)
-            sim.set_gripper(GRIPPER_OPEN)
-            anchored = True
-            print("Anchored!")
-
-        # Process coordinates
-        target, detected = processor.process(hand_tip, hand_tip is not None)
-
-        # IK + control
-        if detected:
-            q_current = sim.get_joint_positions()
-            q_new = ik.solve(q_current, target)
-            sim.set_control(q_new)
-
-        sim.set_gripper(gripper_pos)
-
-        # Step simulation (50Hz control = every 10 physics steps)
-        for _ in range(10):
-            sim.step()
-
-        # FPS
-        frame_count += 1
-        if time.time() - fps_timer >= 1.0:
-            fps = frame_count / (time.time() - fps_timer)
-            frame_count = 0
-            fps_timer = time.time()
-
-        # Visualize
-        gesture_str = gesture if gesture else "none"
-        annotated = viz.draw_opencv(
-            frame,
-            hand_lm,
-            None,
-            target if detected else None,
-            None,
-            fps,
-            gesture=gesture_str,
-        )
-        cv2.imshow("Hand Teleoperation", annotated)
-        viz.update_viewer(
-            target if detected else None,
-            None,
+    print(f"Left arm IK result: {result}")
+    print(f"  target pos = {target_coords.translation.round(3)}")
+    print(f"  reached    = {final_pos.round(3)}")
+    print(f"  pos err    = {pos_err * 1000:.2f} mm")
+    print(f"  rot err    = {rot_err_deg:.2f} deg")
+    if result is not False and pos_err < 0.005:
+        print("IK solved within 5 mm tolerance.")
+        viewer.redraw()
+        time.sleep(0.05)
+    else:
+        print(
+            f"IK did NOT converge within tolerance. "
+            f"Try a closer target (current distance ~{pos_err:.2f} m, "
+            f"reachable radius from initial pose is ~0.6 m)."
         )
 
-        key = cv2.waitKey(1) & 0xFF
-        if key == ord("q"):
-            running = False
-        elif key == ord("r"):
-            print("Manual reset!")
-            sim.reset()
-
-    camera.stop()
-    detector.close()
-    viz.close()
-    cv2.destroyAllWindows()
+    # -------------------------------------------------------------- blocking
+    # ViserViewer.show() does NOT block. Without sleep_forever() the process
+    # exits and the viser server shuts down immediately. Only call this
+    # after all your setup is done — anything you want to visualize must
+    # happen above.
+    viewer._server.sleep_forever()
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Run the main function with a specified URDF file."
+    )
+    parser.add_argument(
+        "--urdf",
+        type=str,
+        default="assets/SO101/so101_new_calib.urdf",
+        help="Path to the URDF file.",
+    )
+    args = parser.parse_args()
+    main(urdf=Path(args.urdf))
