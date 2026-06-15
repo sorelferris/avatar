@@ -30,7 +30,7 @@ def main(urdf: Path):
     # ---------------------------------------------------------------- viewer
     viewer = ViserViewer()
     viewer.add(robot)
-    viewer.show()  # starts HTTP/WS server — does NOT block
+    # viewer.show()  # starts HTTP/WS server — does NOT block
     viewer.redraw()  # push initial pose
     time.sleep(5)  # wait for viewer to start
 
