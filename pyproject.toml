@@ -16,6 +16,7 @@ dependencies = [
     "pyglm>=2.8.3",
     "scikit-robot>=0.3.12",
     "pyrealsense2>=2.58.1.10581",
+    "pynput>=1.8.2",
 ]
 
 [project.optional-dependencies]
