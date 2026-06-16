@@ -83,6 +83,10 @@ class HandDetector:
         self.shared_motion = {}   # {hand_label: {x, y, depth_mm}}
         self.motion_anchor = {}    # 内部使用，不暴露
 
+        # 稳定性等待机制
+        self._stable_frames = {}  # {hand_label: count of consecutive 5-finger frames}
+        self._stable_threshold = 3  # 连续 3 帧
+
     def _setup_hands_detector(self):
         print("Creating MediaPipe Hands...")
         self.hands_detector = MP_HANDS.Hands(
@@ -120,3 +124,133 @@ class HandDetector:
             return None, None
 
         return color_frame, depth_frame
+
+    def _compute_gain(self, displacement: float) -> float:
+        """位移越大，增益越高，非线性映射"""
+        return 0.0005 + abs(displacement) * 0.0001
+
+    def _sample_depth_mm(
+        self, depth_frame, x_depth: int, y_depth: int, radius: int = 2
+    ):
+        dw, dh = depth_frame.get_width(), depth_frame.get_height()
+        x0 = max(0, x_depth - radius)
+        x1 = min(dw - 1, x_depth + radius)
+        y0 = max(0, y_depth - radius)
+        y1 = min(dh - 1, y_depth + radius)
+
+        valid_depths = []
+        for yy in range(y0, y1 + 1):
+            for xx in range(x0, x1 + 1):
+                depth_m = depth_frame.get_distance(xx, yy)
+                if depth_m > 0:
+                    valid_depths.append(depth_m * 1000.0)
+
+        if not valid_depths:
+            return 0
+        return int(np.median(valid_depths))
+
+    def _process_frame(self, color_frame, depth_frame):
+        color_image = np.asarray(color_frame.get_data())
+        color_image = cv2.flip(color_image, 1)
+        rgb_image = cv2.cvtColor(color_image, cv2.COLOR_BGR2RGB)
+
+        result = self.hands_detector.process(rgb_image)
+
+        if result.multi_hand_landmarks and result.multi_handedness:
+            for hand_landmarks, handedness in zip(
+                result.multi_hand_landmarks, result.multi_handedness
+            ):
+                hand_label = handedness.classification[0].label
+                landmarks = hand_landmarks.landmark
+
+                # 计算手腕位置和深度
+                wrist_x, wrist_y = landmarks[0].x, landmarks[0].y
+                dw, dh = depth_frame.get_width(), depth_frame.get_height()
+                x_view = int(wrist_x * dw)
+                y_view = int(wrist_y * dh)
+                x_view = max(0, min(x_view, dw - 1))
+                y_view = max(0, min(y_view, dh - 1))
+                x_depth = (dw - 1) - x_view
+                y_depth = y_view
+                depth_mm = self._sample_depth_mm(depth_frame, x_depth, y_depth)
+
+                num_fingers = count_fingers(landmarks, hand_label)
+                gesture = read_gesture(landmarks, hand_label)
+
+                # 更新 shared_status
+                self.shared_status[hand_label] = {
+                    "x": x_view,
+                    "y": y_view,
+                    "depth_mm": depth_mm,
+                    "fingers": num_fingers,
+                    "gesture": gesture,
+                }
+
+                # 手势使能逻辑
+                if num_fingers == 5 and depth_mm > 100:
+                    # 稳定性等待
+                    self._stable_frames[hand_label] = self._stable_frames.get(hand_label, 0) + 1
+
+                    if self._stable_frames[hand_label] >= self._stable_threshold:
+                        # 更新锚点并计算 motion
+                        if self.motion_anchor.get(hand_label) is not None:
+                            anchor = self.motion_anchor[hand_label]
+                            raw_dx = x_view - anchor["x"]
+                            raw_dy = y_view - anchor["y"]
+                            raw_ddepth = depth_mm - anchor["depth_mm"]
+                            self.shared_motion[hand_label] = {
+                                "x": raw_dx * self._compute_gain(raw_dx),
+                                "y": raw_dy * self._compute_gain(raw_dy),
+                                "depth_mm": raw_ddepth * self._compute_gain(raw_ddepth),
+                            }
+                        else:
+                            self.shared_motion[hand_label] = {"x": 0, "y": 0, "depth_mm": 0}
+
+                        # 更新锚点
+                        self.motion_anchor[hand_label] = {
+                            "x": x_view,
+                            "y": y_view,
+                            "depth_mm": depth_mm,
+                        }
+                    else:
+                        # 稳定性计数未达标，motion 归零
+                        self.shared_motion[hand_label] = {"x": 0, "y": 0, "depth_mm": 0}
+                else:
+                    # 非五指张开，清除锚点和 motion
+                    self._stable_frames[hand_label] = 0
+                    self.motion_anchor[hand_label] = None
+                    self.shared_motion[hand_label] = {"x": 0, "y": 0, "depth_mm": 0}
+        else:
+            # 无手部检测，清除所有状态
+            self.shared_motion = {}
+            self.shared_status = {}
+            self.motion_anchor = {}
+            self._stable_frames = {}
+
+        return color_image
+
+    def run(self):
+        print("Creating MediaPipe Hands...")
+        self._setup_hands_detector()
+        self._setup_realsense_pipeline()
+
+        print(f"{self.__class__.__name__} started, press Ctrl+C to exit...")
+        try:
+            while True:
+                color_frame, depth_frame = self.get_aligned_frames()
+                if color_frame is None or depth_frame is None:
+                    continue
+                self._process_frame(color_frame, depth_frame)
+        except KeyboardInterrupt:
+            print("HandDetector thread exiting...")
+        finally:
+            self.close()
+
+    def close(self):
+        if self.pipeline is not None:
+            self.pipeline.stop()
+            self.pipeline = None
+        cv2.destroyAllWindows()
+        if self.hands_detector is not None:
+            self.hands_detector.close()
+            self.hands_detector = None
