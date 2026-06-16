@@ -29,7 +29,7 @@ def move_arm(robot, eef, arm, motion: dict):
         rotation_mask=False,
         position_mask=True,
     )
-    if result:
+    if result is not None:
         return result
 
     # IK 失败：逐步抬高 Z 轴，直到能伸到目标
@@ -72,6 +72,7 @@ def main() -> None:
     detector_thread = threading.Thread(target=hand_detector.run, daemon=True)
     detector_thread.start()
     print("HandDetector thread started.")
+    time.sleep(2)  # wait for pipeline to initialize
 
     print("Ready. Show open hand to control arm.")
     try:
