@@ -1,5 +1,4 @@
 import os
-import threading
 
 import cv2
 import mediapipe as mp
@@ -72,16 +71,19 @@ def read_gesture(hand_landmarks: list, handedness: str) -> str:
 
 
 class HandDetector:
-    def __init__(self, device_id=DEFAULT_DEVICE_ID):
+    def __init__(self, device_id=DEFAULT_DEVICE_ID, show_window=None):
         self.device_id = device_id
+        if show_window is None:
+            show_window = bool(os.environ.get("DISPLAY"))
+        self.show_window = show_window
         self.hands_detector = None
         self.pipeline = None
         self.align = None
 
         # 共享状态（主线程只读，后台线程写入）
-        self.shared_status = {}   # {hand_label: {x, y, depth_mm, fingers, gesture}}
-        self.shared_motion = {}   # {hand_label: {x, y, depth_mm}}
-        self.motion_anchor = {}    # 内部使用，不暴露
+        self.shared_status = {}  # {hand_label: {x, y, depth_mm, fingers, gesture}}
+        self.shared_motion = {}  # {hand_label: {x, y, depth_mm}}
+        self.motion_anchor = {}  # 内部使用，不暴露
 
         # 稳定性等待机制
         self._stable_frames = {}  # {hand_label: count of consecutive 5-finger frames}
@@ -129,9 +131,7 @@ class HandDetector:
         """位移越大，增益越高，非线性映射"""
         return 0.0005 + abs(displacement) * 0.0001
 
-    def _sample_depth_mm(
-        self, depth_frame, x_depth: int, y_depth: int, radius: int = 2
-    ):
+    def _sample_depth_mm(self, depth_frame, x_depth: int, y_depth: int, radius: int = 2):
         dw, dh = depth_frame.get_width(), depth_frame.get_height()
         x0 = max(0, x_depth - radius)
         x1 = min(dw - 1, x_depth + radius)
@@ -149,6 +149,75 @@ class HandDetector:
             return 0
         return int(np.median(valid_depths))
 
+    def _draw_hand_overlay(self, color_image, hand_label, lines):
+        image_w = color_image.shape[1]
+        margin_x = 20
+        start_y = 40
+        line_gap = 34
+        font = cv2.FONT_HERSHEY_COMPLEX
+        font_scale = 0.6
+        thickness = 1
+        color = (0, 255, 0)
+
+        is_right = hand_label == "Right"
+        for idx, text in enumerate(lines):
+            y = start_y + idx * line_gap
+            text_size, _ = cv2.getTextSize(text, font, font_scale, thickness)
+            if is_right:
+                x = image_w - text_size[0] - margin_x
+            else:
+                x = margin_x
+
+            cv2.putText(
+                color_image,
+                text,
+                (x, y),
+                font,
+                font_scale,
+                color,
+                thickness,
+                cv2.LINE_AA,
+            )
+
+    def _draw_distance_hint(self, color_image: np.ndarray, depth_mm: float | None):
+        image_h, image_w = color_image.shape[:2]
+        d_min, d_max = IDEAL_DISTANCE_RANGE_MM
+        d_hint = f"Ideal distance: {d_min}-{d_max}mm"
+        if depth_mm is None:
+            return
+        else:
+            if depth_mm < d_min:
+                hint_text = f"Too close ({depth_mm:.0f}mm). {d_hint}"
+                color = (0, 165, 255)
+            elif depth_mm > d_max:
+                hint_text = f"Too far ({depth_mm:.0f}mm). {d_hint}"
+                color = (0, 165, 255)
+            else:
+                hint_text = f"Distance good ({depth_mm:.0f}mm). {d_hint}"
+                color = (0, 255, 0)
+
+        font = cv2.FONT_HERSHEY_COMPLEX
+        font_scale = 0.5
+        thickness = 1
+        text_size, _ = cv2.getTextSize(hint_text, font, font_scale, thickness)
+
+        x = max(20, (image_w - text_size[0]) // 2)
+        y = image_h - 20
+
+        box_top_left = (x - 10, y - text_size[1] - 10)
+        box_bottom_right = (x + text_size[0] + 10, y + 10)
+        cv2.rectangle(color_image, box_top_left, box_bottom_right, (0, 0, 0), -1)
+        cv2.putText(
+            color_image,
+            hint_text,
+            (x, y),
+            font,
+            font_scale,
+            color,
+            thickness,
+            cv2.LINE_AA,
+        )
+
     def _process_frame(self, color_frame, depth_frame):
         color_image = np.asarray(color_frame.get_data())
         color_image = cv2.flip(color_image, 1)
@@ -157,11 +226,16 @@ class HandDetector:
         result = self.hands_detector.process(rgb_image)
 
         if result.multi_hand_landmarks and result.multi_handedness:
-            for hand_landmarks, handedness in zip(
-                result.multi_hand_landmarks, result.multi_handedness
-            ):
+            for hand_landmarks, handedness in zip(result.multi_hand_landmarks, result.multi_handedness):
                 hand_label = handedness.classification[0].label
                 landmarks = hand_landmarks.landmark
+
+                # 绘制 hand landmarks
+                MP_DRAW.draw_landmarks(
+                    image=color_image,
+                    landmark_list=hand_landmarks,
+                    connections=MP_HANDS.HAND_CONNECTIONS,
+                )
 
                 # 计算手腕位置和深度
                 wrist_x, wrist_y = landmarks[0].x, landmarks[0].y
@@ -220,6 +294,26 @@ class HandDetector:
                     self._stable_frames[hand_label] = 0
                     self.motion_anchor[hand_label] = None
                     self.shared_motion[hand_label] = {"x": 0, "y": 0, "depth_mm": 0}
+
+                # 绘制手部信息 HUD
+                lines = [f"{hand_label} Hand"]
+                if hand_label in self.shared_status:
+                    info = self.shared_status[hand_label]
+                    lines.append(f"{info['fingers']} fingers")
+                    lines.append(f"Depth: {info['depth_mm']:.0f}mm")
+                if hand_label in self.shared_motion:
+                    info = self.shared_motion[hand_label]
+                    lines.append(
+                        f"Motion: ({info['x']:.4f}, {info['y']:.4f}, {info['depth_mm']:.2f}mm)"
+                    )
+                self._draw_hand_overlay(color_image, hand_label, lines)
+
+            # 绘制距离提示
+            valid_depths = [
+                x["depth_mm"] for x in self.shared_status.values() if x["depth_mm"] is not None
+            ]
+            nearest_depth_mm = min(valid_depths) if valid_depths else None
+            self._draw_distance_hint(color_image, nearest_depth_mm)
         else:
             # 无手部检测，清除所有状态
             self.shared_motion = {}
@@ -230,17 +324,27 @@ class HandDetector:
         return color_image
 
     def run(self):
-        print("Creating MediaPipe Hands...")
+        if not self.show_window:
+            print("No DISPLAY detected or show_window=False, running in headless mode.")
+
         self._setup_hands_detector()
         self._setup_realsense_pipeline()
 
         print(f"{self.__class__.__name__} started, press Ctrl+C to exit...")
         try:
+            if self.show_window:
+                cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
+                cv2.resizeWindow(WINDOW_NAME, 1280, 720)
             while True:
                 color_frame, depth_frame = self.get_aligned_frames()
                 if color_frame is None or depth_frame is None:
                     continue
-                self._process_frame(color_frame, depth_frame)
+                color_image = self._process_frame(color_frame, depth_frame)
+
+                if self.show_window:
+                    cv2.imshow(WINDOW_NAME, color_image)
+                    if cv2.waitKey(1) & 0xFF == ord("q"):
+                        break
         except KeyboardInterrupt:
             print("HandDetector thread exiting...")
         finally:

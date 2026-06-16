@@ -48,7 +48,7 @@ def main() -> None:
     viewer.redraw()
 
     # 启动 HandDetector 后台线程
-    hand_detector = HandDetector()
+    hand_detector = HandDetector(show_window=False)
     detector_thread = threading.Thread(target=hand_detector.run, daemon=True)
     detector_thread.start()
     print("HandDetector thread started.")
