@@ -131,9 +131,9 @@ class HandDetector:
 
         return color_frame, depth_frame
 
-    def _compute_gain(self) -> float:
-        """固定小增益，避免快速手部移动导致机械臂危险运动"""
-        return 0.0002
+    def _compute_gain(self, displacement: float) -> float:
+        """位移越大，增益越高，非线性映射"""
+        return 0.0005 + abs(displacement) * 0.0001
 
     def _sample_depth_mm(self, depth_frame, x_depth: int, y_depth: int, radius: int = 2):
         dw, dh = depth_frame.get_width(), depth_frame.get_height()
@@ -277,9 +277,9 @@ class HandDetector:
                             raw_dy = y_view - anchor["y"]
                             raw_ddepth = depth_mm - anchor["depth_mm"]
                             self.shared_motion[hand_label] = {
-                                "x": raw_dx * self._compute_gain(),
-                                "y": raw_dy * self._compute_gain(),
-                                "depth_mm": raw_ddepth * self._compute_gain(),
+                                "x": raw_dx * self._compute_gain(raw_dx),
+                                "y": raw_dy * self._compute_gain(raw_dy),
+                                "depth_mm": raw_ddepth * self._compute_gain(raw_ddepth),
                             }
                         else:
                             self.shared_motion[hand_label] = {"x": 0, "y": 0, "depth_mm": 0}
