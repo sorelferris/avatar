@@ -8,9 +8,12 @@ from skrobot.coordinates import Coordinates
 from skrobot.viewers import ViserViewer
 
 URDF = "/home/sorel/workspace/robot_description/urdf/robotic_description.urdf"
+MAX_Z_ADJUST = 0.3   # 最大抬升量（安全上限）
+Z_STEP = 0.05        # 每步尝试的抬升量
 
 
 def move_arm(robot, eef, arm, motion: dict):
+    # DO NOT CHANGE THE ORDER OF dx, dy, dz
     dx = -motion.get("depth_mm", 0)
     dy = -motion.get("x", 0)
     dz = -motion.get("y", 0)
@@ -26,7 +29,23 @@ def move_arm(robot, eef, arm, motion: dict):
         rotation_mask=False,
         position_mask=True,
     )
-    return result
+    if result:
+        return result
+
+    # IK 失败：逐步抬高 Z 轴，直到能伸到目标
+    for z_adjust in np.arange(Z_STEP, MAX_Z_ADJUST + Z_STEP, Z_STEP):
+        adjusted_pos = target_pos + np.array([0, 0, z_adjust])
+        result = robot.inverse_kinematics(
+            Coordinates(pos=adjusted_pos.tolist(), rot=target_rot),
+            joint_list=arm,
+            move_target=eef,
+            rotation_mask=False,
+            position_mask=True,
+        )
+        if result:
+            return result
+
+    return None
 
 
 def main() -> None:
