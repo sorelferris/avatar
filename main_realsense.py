@@ -11,13 +11,9 @@ URDF = "/home/sorel/workspace/robot_description/urdf/robotic_description.urdf"
 
 
 def move_arm(robot, eef, arm, motion: dict):
-    # 坐标系映射（摄像头俯视）：
-    # x_view（屏幕左右）→ 机械臂 X（左右）
-    # y_view（屏幕上下）→ 机械臂 Z（上下）
-    # depth_mm（手掌远近）→ 机械臂 Y（前后）
-    dx = motion.get("x", 0)
-    dy = motion.get("depth_mm", 0)  # 深度 → Y（前后）
-    dz = motion.get("y", 0)        # 屏幕上下 → Z（上下）
+    dx = -motion.get("depth_mm", 0)
+    dy = -motion.get("x", 0)
+    dz = -motion.get("y", 0)
 
     if dx == 0 and dy == 0 and dz == 0:
         return None
@@ -41,32 +37,32 @@ def main() -> None:
     for joint in robot.joint_list:
         print(f"{joint.name}: {joint.joint_angle():+.3f}, limits=[{joint.min_angle:+.3f}, {joint.max_angle:+.3f}]")
 
-    # 获取左右臂末端和关节列表
+    # Find end effectors and arm joints
     larm_eef = next(x for x in robot.link_list if x.name == "left_arm_link7")
     rarm_eef = next(x for x in robot.link_list if x.name == "right_arm_link7")
     larm_joints = [x for x in robot.joint_list if x.name.startswith("left_arm_joint")]
     rarm_joints = [x for x in robot.joint_list if x.name.startswith("right_arm_joint")]
 
+    # Create viewer
     viewer = ViserViewer()
     viewer.add(robot)
     viewer.redraw()
 
-    # 启动 HandDetector 后台线程
+    # Start HandDetector in background thread
     hand_detector = HandDetector(show_window=True)
     detector_thread = threading.Thread(target=hand_detector.run, daemon=True)
     detector_thread.start()
     print("HandDetector thread started.")
 
     print("Ready. Show open hand to control arm.")
-
     try:
         while True:
             # polling shared_motion
-            left_motion = hand_detector.shared_motion.get("Left", {"x": 0, "y": 0, "depth_mm": 0})
-            right_motion = hand_detector.shared_motion.get("Right", {"x": 0, "y": 0, "depth_mm": 0})
+            motion_L = hand_detector.shared_motion.get("Left", {"x": 0, "y": 0, "depth_mm": 0})
+            motion_R = hand_detector.shared_motion.get("Right", {"x": 0, "y": 0, "depth_mm": 0})
 
-            move_arm(robot, larm_eef, larm_joints, left_motion)
-            move_arm(robot, rarm_eef, rarm_joints, right_motion)
+            move_arm(robot, larm_eef, larm_joints, motion_L)
+            move_arm(robot, rarm_eef, rarm_joints, motion_R)
 
             viewer.redraw()
             time.sleep(0.033)

@@ -1,12 +1,13 @@
 import os
 import warnings
 
-warnings.filterwarnings("ignore", message="SymbolDatabase.GetPrototype")
 
 import cv2
 import mediapipe as mp
 import numpy as np
 import pyrealsense2 as rs
+
+warnings.filterwarnings("ignore", message="SymbolDatabase.GetPrototype")
 
 MP_HANDS = mp.solutions.hands
 MP_DRAW = mp.solutions.drawing_utils
@@ -306,15 +307,11 @@ class HandDetector:
                     lines.append(f"Depth: {info['depth_mm']:.0f}mm")
                 if hand_label in self.shared_motion:
                     info = self.shared_motion[hand_label]
-                    lines.append(
-                        f"Motion: ({info['x']:.4f}, {info['y']:.4f}, {info['depth_mm']:.2f}mm)"
-                    )
+                    lines.append(f"Motion: ({info['x']:.4f}, {info['y']:.4f}, {info['depth_mm']:.2f}mm)")
                 self._draw_hand_overlay(color_image, hand_label, lines)
 
             # 绘制距离提示
-            valid_depths = [
-                x["depth_mm"] for x in self.shared_status.values() if x["depth_mm"] is not None
-            ]
+            valid_depths = [x["depth_mm"] for x in self.shared_status.values() if x["depth_mm"] is not None]
             nearest_depth_mm = min(valid_depths) if valid_depths else None
             self._draw_distance_hint(color_image, nearest_depth_mm)
         else:
