@@ -11,9 +11,13 @@ URDF = "/home/sorel/workspace/robot_description/urdf/robotic_description.urdf"
 
 
 def move_arm(robot, eef, arm, motion: dict):
+    # 坐标系映射（摄像头俯视）：
+    # x_view（屏幕左右）→ 机械臂 X（左右）
+    # y_view（屏幕上下）→ 机械臂 Z（上下）
+    # depth_mm（手掌远近）→ 机械臂 Y（前后）
     dx = motion.get("x", 0)
-    dy = motion.get("y", 0)
-    dz = motion.get("depth_mm", 0)
+    dy = motion.get("depth_mm", 0)  # 深度 → Y（前后）
+    dz = motion.get("y", 0)        # 屏幕上下 → Z（上下）
 
     if dx == 0 and dy == 0 and dz == 0:
         return None
@@ -48,7 +52,7 @@ def main() -> None:
     viewer.redraw()
 
     # 启动 HandDetector 后台线程
-    hand_detector = HandDetector(show_window=False)
+    hand_detector = HandDetector(show_window=True)
     detector_thread = threading.Thread(target=hand_detector.run, daemon=True)
     detector_thread.start()
     print("HandDetector thread started.")
