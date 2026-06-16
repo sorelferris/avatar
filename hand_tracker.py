@@ -1,4 +1,7 @@
 import os
+import warnings
+
+warnings.filterwarnings("ignore", message="SymbolDatabase.GetPrototype")
 
 import cv2
 import mediapipe as mp
