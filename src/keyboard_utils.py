@@ -1,4 +1,5 @@
 from typing import Callable, Union
+
 from pynput import keyboard
 
 # Define a type for keys that can be either a Key or a KeyCode
@@ -70,6 +71,10 @@ class KeyboardListener:
             print(f"Warning: Key '{key_name}' is already bound to {callback_name}. Overwriting.")
         self.bindings[real_key] = (key_name, callback)  # Store the key name and callback
 
+    def bind(self, key_name: str, callback: Callable[[KeyType], None]):
+        """Shortcut for bind_key"""
+        self.bind_key(key_name, callback)
+
     def _on_press(self, key: KeyType):
         """Internal core method: handle key press events"""
         if key in self.bindings:
@@ -100,7 +105,7 @@ class KeyboardListener:
 if __name__ == "__main__":
     import time
 
-    keyboard_listener = KeyListener()
+    keyboard_listener = KeyboardListener()
 
     keyboard_listener.bind_key("space", lambda key: print(f"[{key}] is Pressed"))
     keyboard_listener.bind_key("a", lambda key: print(f"[{key}] is Pressed"))
