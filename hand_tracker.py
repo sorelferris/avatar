@@ -74,6 +74,22 @@ def read_gesture(hand_landmarks: list, handedness: str) -> str:
     return "Unknown"
 
 
+def is_strict_ok(landmarks) -> bool:
+    """严格 OK 手势检测：拇指与食指尖紧密接触（< 0.03），
+    且中指、无名指、小指完全弯曲（指尖 y > pip y）。
+    比 read_gesture 的 OK 判断更严格，避免误触发复位。
+    """
+    # 拇指与食指尖必须紧密接触
+    if not (abs(landmarks[4].x - landmarks[8].x) < 0.03
+            and abs(landmarks[4].y - landmarks[8].y) < 0.03):
+        return False
+    # 中指、无名指、小指必须完全弯曲
+    for tip, pip in [(12, 10), (16, 14), (20, 18)]:
+        if landmarks[tip].y < landmarks[pip].y:  # 还伸着
+            return False
+    return True
+
+
 class HandDetector:
     def __init__(self, device_id=DEFAULT_DEVICE_ID, show_window=None):
         self.device_id = device_id
@@ -92,6 +108,13 @@ class HandDetector:
         # 稳定性等待机制
         self._stable_frames = {}  # {hand_label: count of consecutive 5-finger frames}
         self._stable_threshold = 3  # 连续 3 帧
+
+        # OK 手势稳定性机制
+        self._ok_stable_frames = {}  # {hand_label: count of consecutive OK frames}
+        self._ok_threshold = 3  # 连续 3 帧
+
+        # 复位请求（主线程读取后清除）
+        self.reset_request = {}  # {hand_label: True}
 
     def _setup_hands_detector(self):
         print("Creating MediaPipe Hands...")
@@ -298,6 +321,15 @@ class HandDetector:
                     self._stable_frames[hand_label] = 0
                     self.motion_anchor[hand_label] = None
                     self.shared_motion[hand_label] = {"x": 0, "y": 0, "depth_mm": 0}
+
+                # OK 手势稳定性等待（独立于 Open Hand 逻辑）
+                if is_strict_ok(landmarks):
+                    self._ok_stable_frames[hand_label] = self._ok_stable_frames.get(hand_label, 0) + 1
+                    if self._ok_stable_frames[hand_label] >= self._ok_threshold:
+                        self.reset_request[hand_label] = True
+                        self._ok_stable_frames[hand_label] = 0  # 触发后清零
+                else:
+                    self._ok_stable_frames[hand_label] = 0
 
                 # 绘制手部信息 HUD
                 lines = [f"{hand_label} Hand"]

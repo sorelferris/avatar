@@ -48,6 +48,12 @@ def move_arm(robot, eef, arm, motion: dict):
     return None
 
 
+def reset_arm(arm_joints):
+    """仅复位对应臂的关节角度，torso 不参与。"""
+    for joint in arm_joints:
+        joint.joint_angle(0.0)
+
+
 def main() -> None:
     # Load robot model
     robot = model.RobotModel.from_urdf(URDF)
@@ -77,6 +83,14 @@ def main() -> None:
     print("Ready. Show open hand to control arm.")
     try:
         while True:
+            # Check reset requests from OK gesture
+            if hand_detector.reset_request.get("Left"):
+                reset_arm(larm_joints)
+                hand_detector.reset_request["Left"] = False
+            if hand_detector.reset_request.get("Right"):
+                reset_arm(rarm_joints)
+                hand_detector.reset_request["Right"] = False
+
             # polling shared_motion
             motion_L = hand_detector.shared_motion.get("Left", {"x": 0, "y": 0, "depth_mm": 0})
             motion_R = hand_detector.shared_motion.get("Right", {"x": 0, "y": 0, "depth_mm": 0})
