@@ -80,8 +80,7 @@ def is_strict_ok(landmarks) -> bool:
     比 read_gesture 的 OK 判断更严格，避免误触发复位。
     """
     # 拇指与食指尖必须紧密接触
-    if not (abs(landmarks[4].x - landmarks[8].x) < 0.03
-            and abs(landmarks[4].y - landmarks[8].y) < 0.03):
+    if not (abs(landmarks[4].x - landmarks[8].x) < 0.03 and abs(landmarks[4].y - landmarks[8].y) < 0.03):
         return False
     # 中指、无名指、小指必须完全弯曲
     for tip, pip in [(12, 10), (16, 14), (20, 18)]:
@@ -364,16 +363,16 @@ class HandDetector:
                 lines = [f"{hand_label} Hand"]
                 if hand_label in self.shared_status:
                     info = self.shared_status[hand_label]
-                    lines.append(f"{info['fingers']} fingers")
+                    # OK 手势时优先显示 gesture，避免 count_fingers 误判干扰
+                    if info["gesture"] != "Unknown":
+                        lines.append(info["gesture"])
+                    else:
+                        lines.append(f"{info['fingers']} fingers")
                     lines.append(f"Depth: {info['depth_mm']:.0f}mm")
                 if hand_label in self.shared_motion:
                     info = self.shared_motion[hand_label]
-                    is_moving = (
-                        abs(info["x"]) > 1e-4
-                        or abs(info["y"]) > 1e-4
-                        or abs(info["depth_mm"]) > 1e-4
-                    )
-                    lines.append("Motion: Moving" if is_moving else "Motion: Steady")
+                    is_moving = abs(info["x"]) > 1e-4 or abs(info["y"]) > 1e-4 or abs(info["depth_mm"]) > 1e-4
+                    lines.append("Moving" if is_moving else "Steady")
                 self._draw_hand_overlay(color_image, hand_label, lines)
 
             # 绘制距离提示
