@@ -55,11 +55,12 @@ class KeyboardListener:
 
         raise ValueError(f"Unsupported key: '{key_str}'.")
 
-    def bind_key(self, key_name: str, callback: Callable[[KeyType], None]):
+    def bind_key(self, key_name: str, callback: Callable[[KeyType], None], description: str = ""):
         """
         bind a key to a callback function
         :param key: the key to bind, e.g., keyboard.Key.enter or keyboard.KeyCode.from_char('a')
         :param callback: the callback function to call when the key is pressed
+        :param description: a brief description of the key binding for user reference
         """
         try:
             real_key = self._parse_key(key_name)
@@ -69,21 +70,21 @@ class KeyboardListener:
         if real_key in self.bindings:
             callback_name = self.bindings[real_key][1].__name__ if self.bindings[real_key][1] else "None"
             print(f"Warning: Key '{key_name}' is already bound to {callback_name}. Overwriting.")
-        self.bindings[real_key] = (key_name, callback)  # Store the key name and callback
+        self.bindings[real_key] = (key_name, callback, description)  # Store the key name, callback, and description
 
-    def bind(self, key_name: str, callback: Callable[[KeyType], None]):
+    def bind(self, key_name: str, callback: Callable[[KeyType], None], description: str = ""):
         """Shortcut for bind_key"""
-        self.bind_key(key_name, callback)
+        self.bind_key(key_name, callback, description)
 
     def _on_press(self, key: KeyType):
         """Internal core method: handle key press events"""
         if key in self.bindings:
-            key_name, callback = self.bindings[key]
+            key_name, callback, _ = self.bindings[key]
             callback(key_name)
             return
 
         if hasattr(key, "char") and key.char:
-            for bound_key, (key_name, callback) in self.bindings.items():
+            for bound_key, (key_name, callback, _) in self.bindings.items():
                 if hasattr(bound_key, "char") and bound_key.char == key.char:
                     callback(key_name)
                     break
@@ -93,13 +94,11 @@ class KeyboardListener:
         if self.listener is None:
             self.listener = keyboard.Listener(on_press=self._on_press)
             self.listener.start()
-            print("Keyboard listener started.")
 
     def stop(self):
         if self.listener is not None:
             self.listener.stop()
             self.listener = None
-            print("Keyboard listener stopped.")
 
 
 if __name__ == "__main__":
