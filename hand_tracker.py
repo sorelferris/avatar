@@ -113,6 +113,10 @@ class HandDetector:
         self._ok_stable_frames = {}  # {hand_label: count of consecutive OK frames}
         self._ok_threshold = 3  # 连续 3 帧
 
+        # OK 触发提示横幅（持续 N 帧）
+        self._reset_flash_frames = 0  # 全局计数器
+        self._reset_flash_duration = 30  # 约 1 秒（30fps）
+
         # 复位请求（主线程读取后清除）
         self.reset_request = {}  # {hand_label: True}
 
@@ -245,6 +249,30 @@ class HandDetector:
             cv2.LINE_AA,
         )
 
+    def _draw_reset_banner(self, color_image, text="OK Gesture Detected - Resetting Arm"):
+        image_h, image_w = color_image.shape[:2]
+        font = cv2.FONT_HERSHEY_COMPLEX
+        font_scale = 0.8
+        thickness = 2
+        text_size, _ = cv2.getTextSize(text, font, font_scale, thickness)
+
+        x = max(20, (image_w - text_size[0]) // 2)
+        y = 30
+
+        box_top_left = (x - 15, y - text_size[1] - 15)
+        box_bottom_right = (x + text_size[0] + 15, y + 15)
+        cv2.rectangle(color_image, box_top_left, box_bottom_right, (0, 140, 255), -1)
+        cv2.putText(
+            color_image,
+            text,
+            (x, y),
+            font,
+            font_scale,
+            (255, 255, 255),
+            thickness,
+            cv2.LINE_AA,
+        )
+
     def _process_frame(self, color_frame, depth_frame):
         color_image = np.asarray(color_frame.get_data())
         color_image = cv2.flip(color_image, 1)
@@ -328,6 +356,7 @@ class HandDetector:
                     if self._ok_stable_frames[hand_label] >= self._ok_threshold:
                         self.reset_request[hand_label] = True
                         self._ok_stable_frames[hand_label] = 0  # 触发后清零
+                        self._reset_flash_frames = self._reset_flash_duration  # 显示提示横幅
                 else:
                     self._ok_stable_frames[hand_label] = 0
 
@@ -352,6 +381,11 @@ class HandDetector:
             self.shared_status = {}
             self.motion_anchor = {}
             self._stable_frames = {}
+
+        # 绘制 OK 触发提示横幅（按帧倒计时自动消失）
+        if self._reset_flash_frames > 0:
+            self._draw_reset_banner(color_image)
+            self._reset_flash_frames -= 1
 
         return color_image
 

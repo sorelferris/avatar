@@ -48,10 +48,16 @@ def move_arm(robot, eef, arm, motion: dict):
     return None
 
 
-def reset_arm(arm_joints):
-    """仅复位对应臂的关节角度，torso 不参与。"""
+def reset_arm(arm_joints, alpha=0.05):
+    """平滑复位对应臂的关节角度到 0.0，torso 不参与。
+    每帧每关节最多调整 alpha 弧度（约 1.5 rad/s @ 30Hz），避免剧变。
+    """
     for joint in arm_joints:
-        joint.joint_angle(0.0)
+        target = 0.0
+        current = joint.joint_angle()
+        delta = target - current
+        step = np.clip(delta, -alpha, alpha)
+        joint.joint_angle(current + step)
 
 
 def main() -> None:
