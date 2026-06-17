@@ -53,6 +53,9 @@ def count_fingers(hand_landmarks: list, handedness: str) -> int:
 
 def read_gesture(hand_landmarks: list, handedness: str) -> str:
     """Read the gesture from the hand landmarks and handedness."""
+    # 严格 OK 手势优先（独立判定，不依赖 count_fingers）
+    if is_strict_ok(hand_landmarks):
+        return "OK"
     num_fingers = count_fingers(hand_landmarks, handedness)
     # 🤛 Fist: 0 fingers extended
     if num_fingers == 0:
@@ -63,14 +66,6 @@ def read_gesture(hand_landmarks: list, handedness: str) -> str:
     # ✋ Open Hand: All fingers extended
     if num_fingers == 5:
         return "Open Hand"
-    # 👌 OK: 2 fingers extended and thumb tip touching index fingertip
-    if (
-        num_fingers == 2
-        and hand_landmarks[4].y < hand_landmarks[3].y
-        and abs(hand_landmarks[4].x - hand_landmarks[8].x) < 0.05
-        and abs(hand_landmarks[4].y - hand_landmarks[8].y) < 0.05
-    ):
-        return "OK"
     return "Unknown"
 
 
