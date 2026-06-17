@@ -368,7 +368,12 @@ class HandDetector:
                     lines.append(f"Depth: {info['depth_mm']:.0f}mm")
                 if hand_label in self.shared_motion:
                     info = self.shared_motion[hand_label]
-                    lines.append(f"Motion: ({info['x']:.4f}, {info['y']:.4f}, {info['depth_mm']:.2f}mm)")
+                    is_moving = (
+                        abs(info["x"]) > 1e-4
+                        or abs(info["y"]) > 1e-4
+                        or abs(info["depth_mm"]) > 1e-4
+                    )
+                    lines.append("Motion: Moving" if is_moving else "Motion: Steady")
                 self._draw_hand_overlay(color_image, hand_label, lines)
 
             # 绘制距离提示
