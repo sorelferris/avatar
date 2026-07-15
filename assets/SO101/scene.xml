@@ -15,10 +15,59 @@
             markrgb="0.8 0.8 0.8" width="300" height="300" />
         <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5"
             reflectance="0.2" />
+        
+        <!-- 桌子、盘子、水果材质 -->
+        <material name="table_wood" rgba="0.55 0.38 0.22 1" reflectance="0.1"/>
+        <material name="plate_white" rgba="0.98 0.98 0.98 1" reflectance="0.3"/>
+        <material name="fruit_apple" rgba="0.95 0.2 0.2 1"/>
+        <material name="fruit_orange" rgba="0.98 0.62 0.12 1"/>
+        <material name="fruit_lemon" rgba="0.98 0.94 0.22 1"/>
     </asset>
+
+    <default>
+        <geom friction="1.5 0.005 0.0001" />
+    </default>
 
     <worldbody>
         <light pos="0 0 3.5" dir="0 0 -1" directional="true" />
         <geom name="floor" size="0 0 0.05" pos="0 0 0" type="plane" material="groundplane" />
+
+        <!-- 桌子静态刚体 -->
+        <body name="table_base" pos="0 0 0">
+            <!-- 桌面：长1.0m 宽0.6m 厚0.02m，离地高度0.4m -->
+            <geom type="box" name="table_top" pos="0 0 0.4" size="0.5 0.3 0.01" material="table_wood"/>
+            <!-- 四条桌腿 -->
+            <geom type="box" pos="-0.47 -0.27 0.2" size="0.025 0.025 0.2" material="table_wood"/>
+            <geom type="box" pos="0.47 -0.27 0.2" size="0.025 0.025 0.2" material="table_wood"/>
+            <geom type="box" pos="-0.47 0.27 0.2" size="0.025 0.025 0.2" material="table_wood"/>
+            <geom type="box" pos="0.47 0.27 0.2" size="0.025 0.025 0.2" material="table_wood"/>
+        </body>
+
+        <!-- 白色圆形盘子放在桌面右侧 -->
+        <body name="plate_body" pos="0.22 0 0.415">
+            <!-- 盘子：简洁设计 -->
+            <!-- 主盘面 -->
+            <geom type="cylinder" size="0.12 0.006" material="plate_white"/>
+            <!-- 盘边凸起 -->
+            <geom type="cylinder" size="0.122 0.002" pos="0 0 0.008" material="plate_white"/>
+        </body>
+
+        <!-- 水果：苹果（红色立方体，可自由移动） -->
+        <body name="apple" pos="0.18 -0.03 0.435">
+            <freejoint/>
+            <geom type="box" size="0.028 0.028 0.028" material="fruit_apple"/>
+        </body>
+
+        <!-- 水果：橙子（橙色立方体，可自由移动） -->
+        <body name="orange" pos="0.26 0.02 0.435">
+            <freejoint/>
+            <geom type="box" size="0.032 0.032 0.032" material="fruit_orange"/>
+        </body>
+
+        <!-- 水果：柠檬（黄色立方体，可自由移动） -->
+        <body name="lemon" pos="0.22 -0.06 0.435">
+            <freejoint/>
+            <geom type="box" size="0.028 0.028 0.028" material="fruit_lemon"/>
+        </body>
     </worldbody>
 </mujoco>
